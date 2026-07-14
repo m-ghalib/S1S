@@ -1,0 +1,20 @@
+# Build products
+.build/
+.build-xcode/
+.swiftpm/
+*.xcodeproj/xcuserdata/
+DerivedData/
+
+# App bundle output
+/dist/
+*.app
+
+# macOS
+.DS_Store
+
+# Models (downloaded at runtime, large)
+/models/
+Sources/**/*.gguf
+
+# Logs
+*.log

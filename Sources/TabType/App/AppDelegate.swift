@@ -1,0 +1,291 @@
+import AppKit
+import Combine
+import SwiftUI
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
+    private let settings = AppSettings.shared
+    private let provider = ModelProvider.shared
+    private lazy var engine = Engine(settings: settings, provider: provider)
+
+    private var statusItem: NSStatusItem!
+    private let statusMenu = NSMenu()
+    private var settingsWindow: NSWindow?
+    private var onboardingWindow: NSWindow?
+    private var trustTimer: Timer?
+    private var cancellables = Set<AnyCancellable>()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        setupStatusItem()
+
+        // Rebuild the menu whenever model state or enablement changes.
+        provider.$state
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.rebuildMenu() }
+            .store(in: &cancellables)
+        settings.$isEnabled
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.rebuildMenu() }
+            .store(in: &cancellables)
+        settings.$showMenuBarIcon
+            .receive(on: RunLoop.main)
+            .sink { [weak self] show in self?.statusItem.isVisible = show }
+            .store(in: &cancellables)
+
+        // Accessory button → open Settings.
+        NotificationCenter.default.addObserver(
+            forName: .tabTypeOpenSettings, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.openSettings() }
+        }
+
+        // Apply the "disable macOS predictive text" preference.
+        applyMacOSPredictiveText()
+        settings.$disableMacOSPredictiveText
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.applyMacOSPredictiveText() }
+            .store(in: &cancellables)
+
+        Log.shared.info("TabType launched. model=\(settings.modelId) ax=\(AccessibilityBridge.isTrusted()) screen=\(ScreenContextProvider.shared.hasPermission()) emoji=\(EmojiMatcher.shared.all.count)")
+
+        // Persist the model id only once it actually finishes loading, so a failed
+        // switch to a different model never leaves settings pointing at a model that
+        // isn't actually loaded (the previous working model stays active meanwhile).
+        provider.onReady = { [weak self] modelId in
+            self?.settings.modelId = modelId
+        }
+
+        // Start loading the model + spell dictionary right away.
+        provider.load(modelId: settings.modelId)
+        if settings.autocorrectEnabled {
+            SpellChecker.shared.loadIfNeeded(language: settings.autocorrectLanguage)
+        }
+
+        // Ask for Screen Recording up front if screen memory is on (non-blocking).
+        if settings.useScreenContext && !ScreenContextProvider.shared.hasPermission() {
+            ScreenContextProvider.shared.requestPermission()
+        }
+
+        // Confirm the capture+OCR pipeline works on this machine (logs the result).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            ScreenContextProvider.shared.selfTest()
+        }
+
+        // Gate on Accessibility permission.
+        if AccessibilityBridge.isTrusted() {
+            _ = engine.start()
+        } else {
+            showOnboarding()
+            waitForTrustThenStart()
+        }
+    }
+
+    // MARK: - Status bar
+
+    private func setupStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = statusItem.button {
+            button.image = NSImage(systemSymbolName: "text.cursor", accessibilityDescription: "TabType")
+            button.image?.isTemplate = true
+        }
+        statusItem.isVisible = settings.showMenuBarIcon
+        statusMenu.delegate = self
+        statusItem.menu = statusMenu
+        rebuildMenu()
+    }
+
+    /// Rebuild right before the menu is shown, so a time-limited pause that expired
+    /// while the menu was closed is reflected immediately.
+    func menuWillOpen(_ menu: NSMenu) {
+        rebuildMenu()
+    }
+
+    private func rebuildMenu() {
+        let menu = statusMenu
+        menu.removeAllItems()
+
+        menu.addItem(item(statusLine(), icon: engineIconName(), enabled: false))
+        menu.addItem(.separator())
+
+        if engine.isPaused {
+            let resumeTitle = settings.isEnabled ? "Resume TabType" : "Enable TabType"
+            menu.addItem(item(resumeTitle, icon: "play.circle", action: #selector(resumeNow)))
+        } else {
+            let toggle = item(settings.isEnabled ? "Pause TabType" : "Enable TabType",
+                              icon: settings.isEnabled ? "pause.circle" : "power",
+                              action: #selector(toggleEnabled))
+            menu.addItem(toggle)
+
+            let pauseMenu = NSMenu()
+            pauseMenu.addItem(item("For 15 Minutes", icon: "timer", action: #selector(pause15)))
+            pauseMenu.addItem(item("For 1 Hour", icon: "timer", action: #selector(pause60)))
+            pauseMenu.addItem(item("Until I Turn It Back On", icon: "moon.zzz", action: #selector(pauseIndefinitely)))
+            let pauseItem = item("Pause For…", icon: "pause.circle")
+            pauseItem.submenu = pauseMenu
+            menu.addItem(pauseItem)
+        }
+
+        menu.addItem(.separator())
+
+        menu.addItem(item("Settings…", icon: "gearshape", action: #selector(openSettings), key: ","))
+        menu.addItem(item("Statistics", icon: "chart.bar", action: #selector(openStatistics)))
+
+        if !AccessibilityBridge.isTrusted() {
+            menu.addItem(item("Grant Accessibility Permission…", icon: "exclamationmark.triangle",
+                              action: #selector(showOnboarding)))
+        }
+
+        menu.addItem(.separator())
+        menu.addItem(item("Open Log", icon: "doc.text.magnifyingglass", action: #selector(openLog)))
+        menu.addItem(item("About TabType", icon: "info.circle", action: #selector(openAbout)))
+
+        menu.addItem(.separator())
+        menu.addItem(item("Quit TabType", icon: "power", action: #selector(quit), key: "q"))
+    }
+
+    /// Build an `NSMenuItem` with an SF Symbol icon.
+    private func item(_ title: String, icon: String, action: Selector? = nil,
+                      key: String = "", enabled: Bool = true) -> NSMenuItem {
+        let menuItem = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        menuItem.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)
+        if action != nil { menuItem.target = self }
+        menuItem.isEnabled = enabled && action != nil
+        return menuItem
+    }
+
+    private func engineIconName() -> String {
+        switch provider.state {
+        case .ready: return settings.engineChoice == .local ? "cpu" : "sparkles"
+        case .downloading: return "arrow.down.circle"
+        case .finalizing: return "gearshape.2"
+        case .failed: return "exclamationmark.triangle"
+        case .idle: return "circle.dashed"
+        }
+    }
+
+    private func statusLine() -> String {
+        switch provider.state {
+        case .idle: return "Starting…"
+        case .downloading(let modelId, let p):
+            return "Downloading \(shortModelName(modelId))… \(Int(p * 100))%"
+        case .finalizing(let modelId):
+            return "Loading \(shortModelName(modelId)) into memory…"
+        case .ready(let id): return "Model: \(shortModelName(id))"
+        case .failed(let modelId, let msg): return "Model error (\(shortModelName(modelId))): \(msg)"
+        }
+    }
+
+    private func shortModelName(_ id: String) -> String {
+        id.split(separator: "/").last.map(String.init) ?? id
+    }
+
+    // MARK: - Actions
+
+    @objc private func toggleEnabled() {
+        settings.isEnabled.toggle()
+        rebuildMenu()
+    }
+
+    @objc private func pause15() { engine.pause(minutes: 15); rebuildMenu() }
+    @objc private func pause60() { engine.pause(minutes: 60); rebuildMenu() }
+    @objc private func pauseIndefinitely() { engine.pause(minutes: nil); rebuildMenu() }
+    @objc private func resumeNow() { engine.resume(); rebuildMenu() }
+
+    @objc private func openStatistics() {
+        SettingsNavigator.shared.pendingSection = .statistics
+        openSettings()
+    }
+
+    @objc private func openAbout() {
+        SettingsNavigator.shared.pendingSection = .about
+        openSettings()
+    }
+
+    @objc private func openSettings() {
+        if settingsWindow == nil {
+            let view = SettingsView().environmentObject(settings).environmentObject(provider)
+            let hosting = NSHostingController(rootView: view)
+            let window = NSWindow(contentViewController: hosting)
+            window.title = "TabType Settings"
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.setContentSize(NSSize(width: 900, height: 620))
+            // Must match SettingsView's `.frame(minWidth:)` — otherwise the user can
+            // resize below what the Apps pane's HSplitView actually needs, clipping it.
+            window.minSize = NSSize(width: 900, height: 460)
+            window.isReleasedWhenClosed = false
+            window.delegate = self
+            window.center()
+            settingsWindow = window
+        }
+        // Give TabType a Dock icon + Cmd-Tab entry while Settings is open — as a
+        // menu-bar-only (.accessory) app, clicking another app would otherwise send
+        // this window behind it with no way back except reopening from the menu bar.
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func showOnboarding() {
+        if onboardingWindow == nil {
+            let view = OnboardingView(
+                onGrant: { AccessibilityBridge.requestTrust() },
+                onGrantScreen: { _ = ScreenContextProvider.shared.requestPermission() },
+                onDone: { [weak self] in self?.onboardingWindow?.close() }
+            )
+            let hosting = NSHostingController(rootView: view)
+            let window = NSWindow(contentViewController: hosting)
+            window.title = "Welcome to TabType"
+            window.styleMask = [.titled, .closable]
+            window.setContentSize(NSSize(width: 480, height: 420))
+            window.isReleasedWhenClosed = false
+            window.center()
+            onboardingWindow = window
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        onboardingWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func openLog() {
+        NSWorkspace.shared.open(Log.fileURL)
+    }
+
+    /// Best-effort: write the global default that controls macOS inline predictive
+    /// text so it doesn't conflict with TabType. Fully applies after log out/in.
+    private func applyMacOSPredictiveText() {
+        let key = "NSAutomaticInlinePredictionEnabled" as CFString
+        let value = settings.disableMacOSPredictiveText ? kCFBooleanFalse : nil
+        CFPreferencesSetValue(key, value, kCFPreferencesAnyApplication,
+                              kCFPreferencesCurrentUser, kCFPreferencesCurrentHost)
+        CFPreferencesSynchronize(kCFPreferencesAnyApplication,
+                                 kCFPreferencesCurrentUser, kCFPreferencesCurrentHost)
+    }
+
+    @objc private func quit() {
+        NSApp.terminate(nil)
+    }
+
+    // MARK: - NSWindowDelegate
+
+    func windowWillClose(_ notification: Notification) {
+        guard notification.object as? NSWindow === settingsWindow else { return }
+        // Revert to menu-bar-only now that Settings is closed.
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    // MARK: - Permission polling
+
+    private func waitForTrustThenStart() {
+        trustTimer?.invalidate()
+        trustTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if AccessibilityBridge.isTrusted() {
+                    self.trustTimer?.invalidate()
+                    self.trustTimer = nil
+                    _ = self.engine.start()
+                    self.rebuildMenu()
+                    self.onboardingWindow?.close()
+                }
+            }
+        }
+    }
+}
