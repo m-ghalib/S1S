@@ -64,6 +64,61 @@ final class SpellChecker: @unchecked Sendable {
         return await checkPlausible(partial: partial, fragment: fragment, lang: "en")
     }
 
+    /// Whether the token before the caret looks like a typo, used to skip suggesting
+    /// entirely (a completion of a misspelling is never what the user wants).
+    /// `isPartial` = the caret is mid-word: a typo means the partial can never become
+    /// a word. Otherwise the word is complete: a typo means it's not in the dictionary
+    /// but a near-neighbor is. Fails open (false) when no dictionary is ready, the
+    /// token is too short, or contains non-letters (names, code, numbers). Like
+    /// `isPlausibleContinuation`, also accepts English as a second-pass language.
+    func isLikelyTypo(word: String, isPartial: Bool, language: String) async -> Bool {
+        guard word.count >= 3, word.allSatisfy({ $0.isLetter }) else { return false }
+        let lang = normalized(language)
+        if !(await checkTypo(word: word, isPartial: isPartial, lang: lang)) { return false }
+        guard lang != "en" else { return true }
+        return await checkTypo(word: word, isPartial: isPartial, lang: "en")
+    }
+
+    /// Instant dictionary word completion for the partial word being typed —
+    /// zero-latency mid-word ghosts while the LLM works on phrase continuations.
+    /// Returns the FULL completed word (typed casing applied), or nil.
+    func completion(for prefix: String, language: String) async -> String? {
+        guard prefix.count >= 3, prefix.allSatisfy({ $0.isLetter }) else { return nil }
+        let lang = normalized(language)
+        if let word = await dictCompletion(prefix: prefix, lang: lang) { return word }
+        guard lang != "en" else { return nil }
+        return await dictCompletion(prefix: prefix, lang: "en")
+    }
+
+    private func dictCompletion(prefix: String, lang: String) async -> String? {
+        await withCheckedContinuation { cont in
+            queue.async { [weak self] in
+                guard let self, let sym = self.ensureLoaded(lang), sym.isReady,
+                      let word = sym.topCompletion(prefix: prefix) else {
+                    cont.resume(returning: nil)
+                    return
+                }
+                cont.resume(returning: Self.applyCase(of: prefix, to: word))
+            }
+        }
+    }
+
+    private func checkTypo(word: String, isPartial: Bool, lang: String) async -> Bool {
+        await withCheckedContinuation { cont in
+            queue.async { [weak self] in
+                guard let self, let sym = self.ensureLoaded(lang), sym.isReady else {
+                    cont.resume(returning: false)   // fail open — no dictionary, don't block
+                    return
+                }
+                if isPartial {
+                    cont.resume(returning: !sym.isKnownOrPrefix(word.lowercased()))
+                } else {
+                    cont.resume(returning: sym.bestSuggestion(word) != nil)
+                }
+            }
+        }
+    }
+
     private func checkPlausible(partial: String, fragment: String, lang: String) async -> Bool {
         await withCheckedContinuation { cont in
             queue.async { [weak self] in

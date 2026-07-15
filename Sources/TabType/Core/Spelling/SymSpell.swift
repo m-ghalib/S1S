@@ -44,6 +44,26 @@ final class SymSpell {
         return words.keys.contains { $0.hasPrefix(c) }
     }
 
+    /// Highest-frequency dictionary word that STARTS WITH `prefix` (lowercased) —
+    /// instant word completion with no model involved. Returns nil when the best
+    /// hit is the prefix itself (word already complete), the prefix is unknown, or
+    /// the hit is too rare to be a confident guess. Linear scan: called once per
+    /// keystroke, same cost class as `isKnownOrPrefix`.
+    func topCompletion(prefix: String) -> String? {
+        guard isReady, prefix.count >= 3 else { return nil }
+        let p = prefix.lowercased()
+        var best: (word: String, freq: Int)?
+        for (word, freq) in words where word.count > p.count && word.hasPrefix(p) {
+            if best == nil || freq > best!.freq { best = (word, freq) }
+        }
+        guard let best, best.freq >= 1000 else { return nil }
+        // If the typed prefix is itself a common word, completing it is usually
+        // wrong more often than right ("the" → "them"?) — only complete past a
+        // complete word when the continuation is far more frequent.
+        if let ownFreq = words[p], ownFreq > best.freq { return nil }
+        return best.word
+    }
+
     /// Best correction for `input`, or nil if it's already a known word or no
     /// confident suggestion exists.
     func bestSuggestion(_ input: String) -> String? {

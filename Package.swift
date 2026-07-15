@@ -59,5 +59,10 @@ let package = Package(
             ],
             path: "Sources/GenCLI"
         ),
+        .testTarget(
+            name: "TabTypeTests",
+            dependencies: ["TabType"],
+            path: "Tests/TabTypeTests"
+        ),
     ]
 )

@@ -1,6 +1,42 @@
 import AppKit
 import ApplicationServices
 
+/// Notification-based focus tracking: fires the handler (on the main run loop)
+/// whenever the focused UI element changes within one app — the instant
+/// alternative to noticing a focus change only on the next keystroke.
+final class AXFocusObserver {
+    private final class Box {
+        let handler: () -> Void
+        init(_ handler: @escaping () -> Void) { self.handler = handler }
+    }
+
+    private let box: Box
+    private var observer: AXObserver?
+
+    init?(pid: pid_t, handler: @escaping () -> Void) {
+        box = Box(handler)
+        let callback: AXObserverCallback = { _, _, _, refcon in
+            guard let refcon else { return }
+            Unmanaged<Box>.fromOpaque(refcon).takeUnretainedValue().handler()
+        }
+        var obs: AXObserver?
+        guard AXObserverCreate(pid, callback, &obs) == .success, let obs else { return nil }
+        let app = AXUIElementCreateApplication(pid)
+        let result = AXObserverAddNotification(
+            obs, app, kAXFocusedUIElementChangedNotification as CFString,
+            Unmanaged.passUnretained(box).toOpaque())
+        guard result == .success else { return nil }
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
+        observer = obs
+    }
+
+    deinit {
+        if let observer {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .defaultMode)
+        }
+    }
+}
+
 /// Thin wrappers over the macOS Accessibility (AX) API for reading the focused
 /// text element, the text preceding the caret, and the caret's screen rectangle.
 enum AccessibilityBridge {
@@ -66,6 +102,32 @@ enum AccessibilityBridge {
     static func hasTextAfterCaret(of element: AXUIElement) -> Bool {
         guard let full = stringValue(of: element), let caret = caretOffset(of: element) else { return false }
         return caret < full.count
+    }
+
+    /// Whether the element is an EDITABLE text input. Selected-text-range alone is
+    /// not enough — read-only static text and web areas expose it too (anything
+    /// selectable does). Editability = a text-input role, or a settable value.
+    static func isTextInput(_ element: AXUIElement) -> Bool {
+        var roleRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef) == .success,
+           let role = roleRef as? String {
+            let textRoles: Set<String> = [
+                kAXTextFieldRole as String, kAXTextAreaRole as String,
+                kAXComboBoxRole as String, "AXSearchField",
+            ]
+            if textRoles.contains(role) { return true }
+        }
+        var settable = DarwinBoolean(false)
+        let err = AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable)
+        return err == .success && settable.boolValue
+    }
+
+    /// True only with POSITIVE evidence that the caret sits at the very end of the
+    /// field's text. Unreadable AX (common in Electron) returns false — callers use
+    /// this to gate rendering that would overlap any text after the caret.
+    static func caretConfirmedAtEnd(of element: AXUIElement) -> Bool {
+        guard let full = stringValue(of: element), let caret = caretOffset(of: element) else { return false }
+        return caret >= full.count
     }
 
     /// Text immediately preceding the caret, capped at `maxChars`.
@@ -281,5 +343,15 @@ enum AccessibilityBridge {
               AXValueGetValue(sizeRef as! AXValue, .cgSize, &size) else { return nil }
         let rect = CGRect(origin: origin, size: size)
         return rect.width > 0 && rect.height > 0 ? rect : nil
+    }
+
+    /// Gets the frame of the window containing the currently focused element.
+    static func focusedWindowFrame() -> CGRect? {
+        guard let element = focusedElement() else { return nil }
+        var winRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXWindowAttribute as CFString, &winRef) == .success,
+              let windowRef = winRef else { return nil }
+        let windowElement = windowRef as! AXUIElement
+        return elementFrame(of: windowElement)
     }
 }

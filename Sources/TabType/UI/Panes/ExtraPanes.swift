@@ -10,7 +10,13 @@ struct ContextPane: View {
         Form {
             Section("Screenshot Settings") {
                 Toggle("Use screenshots for context", isOn: $settings.useScreenContext)
-                Text("Reads the window you're typing in to understand its context and give more relevant completions. Off by default: it can pull in unrelated text from other things you have open. Processed locally; never stored or sent anywhere.")
+                Picker("Extraction mode", selection: $settings.screenCropMode) {
+                    ForEach(AppSettings.ScreenCropMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .disabled(!settings.useScreenContext)
+                Text("Reads the window you're typing in to understand its context and give more relevant completions. Columnar and Caret-Aware modes help ignore sidebars in chat apps.")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Use screenshots to improve suggestion appearance", isOn: $settings.useScreenshotAppearance)
                 Text("Samples the color around the caret so ghost text blends with the field's real text. May occasionally show a Screen Recording indicator in the menu bar.")
@@ -55,6 +61,12 @@ struct TextToolsPane: View {
                     SpellChecker.shared.loadIfNeeded(language: lang)
                 }
                 Text("When you finish a word, clear typos are corrected in place (e.g. \"teh\" → \"the\"). Never in password fields.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Don't suggest while a word is misspelled", isOn: $settings.skipOnTypo)
+                    .onChange(of: settings.skipOnTypo) { _, on in
+                        if on { SpellChecker.shared.loadIfNeeded(language: settings.autocorrectLanguage) }
+                    }
+                Text("Pauses completions when the word at the cursor looks like a typo, instead of suggesting its corrected form.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Macros") {
@@ -202,7 +214,6 @@ private struct KeyRecorder: NSViewRepresentable {
 /// Author name / voice / custom instructions that shape suggestions to sound like you.
 struct PersonalizationPane: View {
     @EnvironmentObject var settings: AppSettings
-    @ObservedObject var history = TypingHistoryStore.shared
     @State private var showingDeleteConfirm = false
 
     var body: some View {
@@ -226,12 +237,11 @@ struct PersonalizationPane: View {
                     Text("Uses your typing history to slightly favor the words and phrases you use often. Subtle at lower values; too high may occasionally suggest a less fitting word.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                LabeledContent("Existing data") {
-                    Button("Delete All…", role: .destructive) { showingDeleteConfirm = true }
-                        .disabled(history.entryCount == 0)
+                // Kept in a subview so TypingHistoryStore.shared (which reads the
+                // Keychain on first touch) is only instantiated when data can exist.
+                if settings.collectTypingHistory || TypingHistoryStore.historyFileExists {
+                    HistoryDataRow(showingDeleteConfirm: $showingDeleteConfirm)
                 }
-                Text(history.entryCount == 0 ? "No inputs have been collected yet." : "\(history.entryCount) snippet\(history.entryCount == 1 ? "" : "s") stored locally.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 HStack {
@@ -263,9 +273,26 @@ struct PersonalizationPane: View {
         }
         .formStyle(.grouped)
         .confirmationDialog("Delete all collected typing history?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
-            Button("Delete All", role: .destructive) { history.deleteAll() }
+            Button("Delete All", role: .destructive) { TypingHistoryStore.shared.deleteAll() }
             Button("Cancel", role: .cancel) {}
         }
+    }
+}
+
+/// Data row for the Personalization pane; owns the `@ObservedObject` so the
+/// store singleton (whose first touch reads the Keychain) is only created when
+/// this row is actually shown.
+private struct HistoryDataRow: View {
+    @ObservedObject var history = TypingHistoryStore.shared
+    @Binding var showingDeleteConfirm: Bool
+
+    var body: some View {
+        LabeledContent("Existing data") {
+            Button("Delete All…", role: .destructive) { showingDeleteConfirm = true }
+                .disabled(history.entryCount == 0)
+        }
+        Text(history.entryCount == 0 ? "No inputs have been collected yet." : "\(history.entryCount) snippet\(history.entryCount == 1 ? "" : "s") stored locally.")
+            .font(.caption).foregroundStyle(.secondary)
     }
 }
 

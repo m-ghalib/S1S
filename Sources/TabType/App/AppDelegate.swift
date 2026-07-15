@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Combine
 import SwiftUI
 
@@ -17,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
+        startSecureInputWatch()
 
         // Rebuild the menu whenever model state or enablement changes.
         provider.$state
@@ -25,7 +27,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             .store(in: &cancellables)
         settings.$isEnabled
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.rebuildMenu() }
+            .sink { [weak self] enabled in
+                self?.rebuildMenu()
+                // Visibly dim the menu-bar glyph while disabled — a silently-off
+                // engine has repeatedly read as "the app is broken".
+                self?.statusItem.button?.appearsDisabled = !enabled
+            }
             .store(in: &cancellables)
         settings.$showMenuBarIcon
             .receive(on: RunLoop.main)
@@ -89,6 +96,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
         statusItem.isVisible = settings.showMenuBarIcon
         statusMenu.delegate = self
+        // Honor the isEnabled we set in item(...) — with auto-enable on, AppKit
+        // grays out action-less items like the "Pause For…" submenu parent.
+        statusMenu.autoenablesItems = false
         statusItem.menu = statusMenu
         rebuildMenu()
     }
@@ -104,6 +114,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.removeAllItems()
 
         menu.addItem(item(statusLine(), icon: engineIconName(), enabled: false))
+        if secureInputActive {
+            menu.addItem(item("Secure Input is on — suggestions paused",
+                              icon: "lock.fill", enabled: false))
+        }
         menu.addItem(.separator())
 
         if engine.isPaused {
@@ -116,6 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             menu.addItem(toggle)
 
             let pauseMenu = NSMenu()
+            pauseMenu.autoenablesItems = false
             pauseMenu.addItem(item("For 15 Minutes", icon: "timer", action: #selector(pause15)))
             pauseMenu.addItem(item("For 1 Hour", icon: "timer", action: #selector(pause60)))
             pauseMenu.addItem(item("Until I Turn It Back On", icon: "moon.zzz", action: #selector(pauseIndefinitely)))
@@ -148,7 +163,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         let menuItem = NSMenuItem(title: title, action: action, keyEquivalent: key)
         menuItem.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)
         if action != nil { menuItem.target = self }
-        menuItem.isEnabled = enabled && action != nil
+        // Submenu parents legitimately have no action — don't disable them.
+        menuItem.isEnabled = enabled
         return menuItem
     }
 
@@ -159,6 +175,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         case .finalizing: return "gearshape.2"
         case .failed: return "exclamationmark.triangle"
         case .idle: return "circle.dashed"
+        }
+    }
+
+    /// Another app holding macOS Secure Input silently blinds the keystroke tap —
+    /// surface it instead of looking broken (Cotypist ships the same warning).
+    private var secureInputActive = false
+    private var secureInputTimer: Timer?
+
+    func startSecureInputWatch() {
+        secureInputTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let active = IsSecureEventInputEnabled()
+                guard active != self.secureInputActive else { return }
+                self.secureInputActive = active
+                self.statusItem.button?.toolTip = active
+                    ? "Another app has Secure Input on — TabType can't see keystrokes until it releases it."
+                    : nil
+                self.rebuildMenu()
+                if active {
+                    Log.shared.info("Secure Input active (another app) — keystroke tap is blind")
+                }
+            }
         }
     }
 

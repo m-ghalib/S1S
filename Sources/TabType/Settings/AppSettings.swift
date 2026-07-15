@@ -5,6 +5,12 @@ import Combine
 /// Observable so SwiftUI views and the engine react to changes live.
 @MainActor
 final class AppSettings: ObservableObject {
+    enum ScreenCropMode: String, CaseIterable, Codable {
+        case fullWindow = "Full Window"
+        case columnar = "Columnar Sorting"
+        case caretCropped = "Caret-Aware Cropping (Default)"
+    }
+
     static let shared = AppSettings()
 
     private let defaults = UserDefaults.standard
@@ -45,6 +51,7 @@ final class AppSettings: ObservableObject {
     @Published var emojiEnabled: Bool { didSet { defaults.set(emojiEnabled, forKey: Keys.emojiEnabled) } }
     @Published var macrosEnabled: Bool { didSet { defaults.set(macrosEnabled, forKey: Keys.macrosEnabled) } }
     @Published var autocorrectEnabled: Bool { didSet { defaults.set(autocorrectEnabled, forKey: Keys.autocorrectEnabled) } }
+    @Published var skipOnTypo: Bool { didSet { defaults.set(skipOnTypo, forKey: Keys.skipOnTypo) } }
     @Published var emoticonsEnabled: Bool { didSet { defaults.set(emoticonsEnabled, forKey: Keys.emoticonsEnabled) } }
     @Published var emojiSkinTone: String { didSet { defaults.set(emojiSkinTone, forKey: Keys.emojiSkinTone) } }
 
@@ -72,10 +79,18 @@ final class AppSettings: ObservableObject {
     @Published var contextChars: Int { didSet { defaults.set(contextChars, forKey: Keys.contextChars) } }
     /// Read the surrounding on-screen conversation (chat transcripts) as context.
     @Published var useScreenContext: Bool { didSet { defaults.set(useScreenContext, forKey: Keys.useScreenContext) } }
+    /// How to crop/sort the screen context (e.g. to ignore sidebars in chat apps).
+    @Published var screenCropMode: ScreenCropMode { didSet { defaults.set(screenCropMode.rawValue, forKey: Keys.screenCropMode) } }
     /// Use the clipboard contents as additional context (opt-in; may be sensitive).
     @Published var useClipboardContext: Bool { didSet { defaults.set(useClipboardContext, forKey: Keys.useClipboardContext) } }
     /// Sample the caret area to match ghost-text colour to the field (screenshot-assisted).
     @Published var useScreenshotAppearance: Bool { didSet { defaults.set(useScreenshotAppearance, forKey: Keys.useScreenshotAppearance) } }
+    @Published var textMirroring: Bool { didSet { defaults.set(textMirroring, forKey: Keys.textMirroring) } }
+    /// One-time hint flags.
+    var didShowGoogleDocsHint: Bool {
+        get { defaults.bool(forKey: Keys.didShowGoogleDocsHint) }
+        set { defaults.set(newValue, forKey: Keys.didShowGoogleDocsHint) }
+    }
 
     // MARK: General polish
     @Published var showMenuBarIcon: Bool { didSet { defaults.set(showMenuBarIcon, forKey: Keys.showMenuBarIcon) } }
@@ -89,7 +104,7 @@ final class AppSettings: ObservableObject {
         }
     }
     static func words(for length: String) -> Int {
-        switch length { case "short": return 3; case "long": return 12; default: return 6 }
+        switch length { case "short": return 3; case "long": return 14; default: return 8 }
     }
 
     // MARK: Personalization
@@ -142,7 +157,9 @@ final class AppSettings: ObservableObject {
             // any deep sampling/logit changes.
             let limit = max(0, Int(personalizeWordChoice * 12))
             let words = TypingHistoryStore.shared.topWords(limit: limit)
-            if !words.isEmpty {
+            // A 1-2 word "hint" is pure steering noise for a small model — only
+            // include the sentence once there's a real signal.
+            if words.count >= 3 {
                 parts.append("Words this person uses often: \(words.joined(separator: ", ")).")
             }
         }
@@ -164,8 +181,10 @@ final class AppSettings: ObservableObject {
         isEnabled = defaults.object(forKey: Keys.isEnabled) as? Bool ?? true
         debounceMs = defaults.object(forKey: Keys.debounceMs) as? Int ?? 90
         continuousGeneration = defaults.object(forKey: Keys.continuousGeneration) as? Bool ?? true
-        maxTokens = defaults.object(forKey: Keys.maxTokens) as? Int ?? 18
-        maxWords = defaults.object(forKey: Keys.maxWords) as? Int ?? 6
+        // 24 tokens: 18 could truncate a 6-word completion mid-word with Qwen's
+        // tokenizer; SuggestionTrimmer bounds the visible length regardless.
+        maxTokens = defaults.object(forKey: Keys.maxTokens) as? Int ?? 28
+        maxWords = defaults.object(forKey: Keys.maxWords) as? Int ?? 8
         acceptWholeLine = defaults.object(forKey: Keys.acceptWholeLine) as? Bool ?? false
         ghostOpacity = defaults.object(forKey: Keys.ghostOpacity) as? Double ?? 0.45
         // Local model is the default (matches Cotypist's own architecture — it never
@@ -176,12 +195,18 @@ final class AppSettings: ObservableObject {
         // explicitly picks one.
         modelId = defaults.string(forKey: Keys.modelId) ?? HardwareInfo.recommendedModelId
         temperature = defaults.object(forKey: Keys.temperature) as? Double ?? 0.1
-        contextChars = defaults.object(forKey: Keys.contextChars) as? Int ?? 1600
+        // Must stay ≤ the PromptBuilder cap (1500) minus its reserve, or the prefix
+        // gets re-truncated and context sections starve.
+        contextChars = defaults.object(forKey: Keys.contextChars) as? Int ?? 1200
         // Default OFF: OCR of the focused window repeatedly bled unrelated on-screen
         // text (plans, docs, code) into suggestions. Opt-in for those who want it.
         useScreenContext = defaults.object(forKey: Keys.useScreenContext) as? Bool ?? false
+        // Caret-cropped is the default: OCR only the region around the caret, which
+        // keeps toolbars/sidebars/unrelated paragraphs out of the prompt.
+        screenCropMode = ScreenCropMode(rawValue: defaults.string(forKey: Keys.screenCropMode) ?? "") ?? .caretCropped
         useClipboardContext = defaults.object(forKey: Keys.useClipboardContext) as? Bool ?? false
         useScreenshotAppearance = defaults.object(forKey: Keys.useScreenshotAppearance) as? Bool ?? true
+        textMirroring = defaults.object(forKey: Keys.textMirroring) as? Bool ?? true
         showMenuBarIcon = defaults.object(forKey: Keys.showMenuBarIcon) as? Bool ?? true
         showAccessoryButton = defaults.object(forKey: Keys.showAccessoryButton) as? Bool ?? false
         disableMacOSPredictiveText = defaults.object(forKey: Keys.disableMacOSPredictiveText) as? Bool ?? false
@@ -205,6 +230,7 @@ final class AppSettings: ObservableObject {
         emojiEnabled = defaults.object(forKey: Keys.emojiEnabled) as? Bool ?? true
         macrosEnabled = defaults.object(forKey: Keys.macrosEnabled) as? Bool ?? true
         autocorrectEnabled = defaults.object(forKey: Keys.autocorrectEnabled) as? Bool ?? true
+        skipOnTypo = defaults.object(forKey: Keys.skipOnTypo) as? Bool ?? true
         emoticonsEnabled = defaults.object(forKey: Keys.emoticonsEnabled) as? Bool ?? true
         emojiSkinTone = defaults.string(forKey: Keys.emojiSkinTone) ?? "none"
         includeTrailingSpace = defaults.object(forKey: Keys.includeTrailingSpace) as? Bool ?? false
@@ -257,8 +283,11 @@ final class AppSettings: ObservableObject {
         static let temperature = "temperature"
         static let contextChars = "contextChars"
         static let useScreenContext = "useScreenContext"
+        static let screenCropMode = "screenCropMode"
         static let useClipboardContext = "useClipboardContext"
         static let useScreenshotAppearance = "useScreenshotAppearance"
+        static let textMirroring = "textMirroring"
+        static let didShowGoogleDocsHint = "didShowGoogleDocsHint"
         static let showMenuBarIcon = "showMenuBarIcon"
         static let showAccessoryButton = "showAccessoryButton"
         static let completionLength = "completionLength"
@@ -275,6 +304,7 @@ final class AppSettings: ObservableObject {
         static let emojiEnabled = "emojiEnabled"
         static let macrosEnabled = "macrosEnabled"
         static let autocorrectEnabled = "autocorrectEnabled"
+        static let skipOnTypo = "skipOnTypo"
         static let autocorrectLanguage = "autocorrectLanguage"
         static let emoticonsEnabled = "emoticonsEnabled"
         static let emojiSkinTone = "emojiSkinTone"

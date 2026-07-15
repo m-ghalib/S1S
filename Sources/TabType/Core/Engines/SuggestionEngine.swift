@@ -4,7 +4,7 @@ import Foundation
 struct CompletionRequest {
     /// Text immediately before the caret (the thing to continue).
     var beforeCursor: String
-    /// Text after the caret (unused for now; reserved for fill-in-middle).
+    /// Text after the caret, sent as fill-in-the-middle context (see `PromptBuilder`).
     var afterCursor: String
     /// Remembered on-screen context (OCR of other windows), may be empty.
     var screenContext: String
@@ -12,6 +12,15 @@ struct CompletionRequest {
     var clipboard: String = ""
     /// Short persona preface from personalization settings (may be empty).
     var persona: String = ""
+    /// Recent (prefix, accepted-completion) pairs from the user's own history,
+    /// rendered as extra few-shot examples in the system prompt.
+    var personalExamples: [TypingHistoryStore.AcceptPair] = []
+    /// Samples of the author's recent writing (across apps) — voice + topics
+    /// context, rendered as `<recently_written_by_author>` in the prompt.
+    var previousWriting: [String] = []
+    /// Speculative request: generated mid-burst and PARKED for instant serving on
+    /// the next pause; its result is never presented directly.
+    var speculative: Bool = false
     /// Character budget for screen-memory context in the prompt (chat/messaging apps
     /// get a larger one so more transcript survives — see `AppPolicy.screenContextCap`).
     var screenContextBudget: Int = 700

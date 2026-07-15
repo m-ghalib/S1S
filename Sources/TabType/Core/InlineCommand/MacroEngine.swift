@@ -15,6 +15,24 @@ struct MacroEngine {
         return date(q) ?? random(q) ?? unitConversion(q) ?? arithmetic(q)
     }
 
+    /// Every fixed command keyword `evaluate` recognizes (expressions like
+    /// arithmetic/unit conversions are matched structurally instead).
+    static let keywords: [String] = [
+        "date", "today", "time", "now", "datetime", "day", "iso",
+        "uuid", "dice", "roll", "coin", "random",
+    ]
+
+    /// Whether `query` could still grow into a valid macro — used to decide when the
+    /// inline-command session should give up. True when the query is a prefix of a
+    /// known keyword, or looks like a growing expression (contains a digit or an
+    /// arithmetic/conversion operator).
+    static func couldMatch(_ query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return true }
+        if keywords.contains(where: { $0.hasPrefix(q) || q.hasPrefix($0) }) { return true }
+        return q.contains(where: { $0.isNumber }) || q.contains(where: { "+-*/()->.".contains($0) })
+    }
+
     // MARK: Date / time
     private func date(_ q: String) -> String? {
         let f = DateFormatter()

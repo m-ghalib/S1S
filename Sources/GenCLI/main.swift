@@ -118,6 +118,89 @@ func complete(_ prompt: String, maxTok: Int) async throws -> (String, TimeInterv
     return (out, Date().timeIntervalSince(start))
 }
 
+// --- KV prefix-cache A/B validation (mirrors Predictor.PromptCache logic) ---
+// Usage: tabtype-gencli --model <id> --kvtest
+// Simulates consecutive keystrokes (growing prompt, shared system prefix) and checks
+// that cached generation (a) matches uncached output exactly, (b) prefills far fewer
+// tokens (reported as wall-clock).
+if args.contains("--kvtest") {
+    let system = """
+    You are an inline autocomplete engine. You ARE the author of the text after "Input:". \
+    Output only the next few words the author would type.
+    """
+    let steps = [
+        "I just wanted to follow up on the propos",
+        "I just wanted to follow up on the proposal we disc",
+        "I just wanted to follow up on the proposal we discussed last week and see if",
+    ]
+
+    @Sendable func tokenize(_ ctx: ModelContext, _ user: String) throws -> [Int] {
+        try ctx.tokenizer.applyChatTemplate(messages: [
+            ["role": "system", "content": system],
+            ["role": "user", "content": "Input: \(user)\nOutput:"],
+        ])
+    }
+
+    @Sendable func run(_ ids: [Int], ctx: ModelContext, cache: [KVCache]?, feedFrom: Int) async throws -> String {
+        var params = GenerateParameters()
+        params.maxTokens = 16
+        params.temperature = 0.0   // deterministic for exact comparison
+        params.repetitionPenalty = 1.05
+        let input = LMInput(tokens: MLXArray(ids[feedFrom...].map { Int32($0) }))
+        let stream = try MLXLMCommon.generate(input: input, cache: cache, parameters: params, context: ctx)
+        var text = ""
+        // Never break early — abandoning the stream mid-flight segfaults MLX.
+        for await item in stream {
+            if case .chunk(let s) = item { text += s }
+        }
+        return text
+    }
+
+    let pass = try await container.perform { ctx -> Bool in
+        var pass = true
+        var cachedTokens: [Int] = []
+        var kv: [KVCache] = ctx.model.newCache(parameters: nil)
+        for (i, step) in steps.enumerated() {
+            let ids = try tokenize(ctx, step)
+
+            // Uncached reference.
+            let t0 = Date()
+            let ref = try await run(ids, ctx: ctx, cache: nil, feedFrom: 0)
+            let tRef = Date().timeIntervalSince(t0)
+
+            // Cached: trim divergent suffix, feed only new tokens.
+            var common = 0
+            let maxCommon = min(cachedTokens.count, ids.count - 1)
+            while common < maxCommon, cachedTokens[common] == ids[common] { common += 1 }
+            if common < cachedTokens.count {
+                let need = cachedTokens.count - common
+                if trimPromptCache(kv, numTokens: need) < need {
+                    kv = ctx.model.newCache(parameters: nil); cachedTokens = []; common = 0
+                } else { cachedTokens = Array(cachedTokens.prefix(common)) }
+            }
+            let t1 = Date()
+            let out = try await run(ids, ctx: ctx, cache: kv, feedFrom: common)
+            let tCached = Date().timeIntervalSince(t1)
+            let extra = (kv.first?.offset ?? 0) - ids.count
+            if extra > 0 { trimPromptCache(kv, numTokens: extra) }
+            cachedTokens = ids
+
+            let match = out == ref
+            pass = pass && match
+            print("step \(i): prompt=\(ids.count) tok, fed=\(ids.count - common) tok, " +
+                  "uncached=\(String(format: "%.0f", tRef * 1000))ms, " +
+                  "cached=\(String(format: "%.0f", tCached * 1000))ms, match=\(match)")
+            if !match {
+                print("  ref:    \(ref.replacingOccurrences(of: "\n", with: "⏎"))")
+                print("  cached: \(out.replacingOccurrences(of: "\n", with: "⏎"))")
+            }
+        }
+        return pass
+    }
+    print(pass ? "KVTEST PASS" : "KVTEST FAIL")
+    exit(pass ? 0 : 1)
+}
+
 // Warm up.
 _ = try await complete("Hello", maxTok: 4)
 

@@ -18,6 +18,11 @@ struct AppPolicy {
     /// globally turned on `useScreenContext` — for chat/messaging apps where reading
     /// recent conversation is the whole point, matching Cotypist-style behavior.
     var forceScreenContext: Bool = false
+    /// Electron/web apps report caret bounds that lag ~0.3-0.5s behind the real
+    /// caret during typing. Presentation there must wait for a typing pause (the
+    /// Cotypist strategy — observed live): by idle time the bounds have caught up
+    /// and inline ghosts place correctly.
+    var laggyCaret: Bool = false
     /// Overrides the default screen-context character budget for this app (nil = use
     /// the global default). Chat apps get a larger budget so more transcript survives.
     var screenContextCap: Int?
@@ -27,9 +32,11 @@ struct AppPolicy {
     /// Ghost-text vertical nudge in points.
     var verticalOffset: Double = 0
     /// Font-size-from-caret-height ratio, used only when the field's real AX font
-    /// can't be read (common for web/Electron content). Default (0.72) assumes a
-    /// roughly 1.4x line-height-to-font-size ratio; tune per-app if that's off.
-    var fontSizeRatio: Double = 0.72
+    /// can't be read (common for web/Electron content). Web/Electron caret rects are
+    /// padded CSS line boxes, so a tight-line-box ratio (0.72) undersizes the ghost;
+    /// 0.83 matches the field text size observed in Claude Desktop (Cotypist's
+    /// ghost renders at exactly the field size there).
+    var fontSizeRatio: Double = 0.83
     /// Whether to show completions when there's text after the cursor on the same line.
     var allowsMidLine: Bool = true
     /// When true, Tab does not accept suggestions in this app (e.g. IDEs where Tab
@@ -82,6 +89,16 @@ enum AppPolicyStore {
         "notion.id", "md.obsidian",
     ]
 
+    /// Electron/Chromium apps whose AX caret bounds lag the real caret while
+    /// typing (observed ~0.5s in Claude Desktop) — inline ghost placement can't be
+    /// trusted there; suggestions render as a bubble above the caret instead.
+    private static let electronApps: Set<String> = [
+        "com.anthropic.claudefordesktop", "com.tinyspeck.slackmacgap",
+        "com.hnc.Discord", "net.whatsapp.WhatsApp", "notion.id", "md.obsidian",
+        "com.microsoft.VSCode", "com.spotify.client", "com.figma.Desktop",
+        "com.microsoft.teams2", "us.zoom.xos",
+    ]
+
     /// Chat/messaging apps where recent conversation IS the context that matters —
     /// screen memory is force-enabled here regardless of the global toggle, with a
     /// larger character budget so more transcript survives into the prompt.
@@ -99,7 +116,14 @@ enum AppPolicyStore {
         if pasteApps.contains(id) { policy.insertionStrategy = .paste }
         if chatApps.contains(id) {
             policy.forceScreenContext = true
-            policy.screenContextCap = 1400
+            policy.screenContextCap = 700
+        }
+        // Electron/web apps: AX caret bounds lag behind the real caret while
+        // typing — present only after a typing pause, and never mid-line (the
+        // after-text position can't be trusted enough to avoid overlap there).
+        if electronApps.contains(id) {
+            policy.laggyCaret = true
+            policy.allowsMidLine = false
         }
         switch id {
         case "com.apple.Safari": policy.fontFactor = 0.98

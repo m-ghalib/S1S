@@ -34,12 +34,13 @@ final class FoundationModelEngine: SuggestionEngine {
             Log.shared.info("model instructions (Apple Intelligence system message):\n---\n\(CompletionInstructions.system)\n---")
         }
 
-        let body = PromptBuilder.body(request, cap: 1500, screenContextBudget: request.screenContextBudget)
+        let body = PromptBuilder.body(request, cap: 1500, chatFormat: true)
         guard !body.isEmpty else { return nil }
 
         // Fresh session per call: no transcript carry-over between independent
         // completions.
-        let session = LanguageModelSession(instructions: CompletionInstructions.system)
+        let session = LanguageModelSession(
+            instructions: CompletionInstructions.system(personalExamples: request.personalExamples))
         // Greedy decoding for low temperature gives the most predictable completion.
         let options: GenerationOptions = request.temperature <= 0.15
             ? GenerationOptions(sampling: .greedy, maximumResponseTokens: request.maxTokens)

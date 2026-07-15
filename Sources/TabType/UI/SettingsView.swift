@@ -138,8 +138,8 @@ struct GeneralSettingsView: View {
                 .pickerStyle(.radioGroup)
                 Picker("Completion length", selection: $settings.completionLength) {
                     Text("Short (~3 words)").tag("short")
-                    Text("Medium (~6 words)").tag("medium")
-                    Text("Long (~12 words)").tag("long")
+                    Text("Medium (~8 words)").tag("medium")
+                    Text("Long (~14 words)").tag("long")
                 }
             }
 
@@ -151,6 +151,9 @@ struct GeneralSettingsView: View {
                     Text("Ghost text opacity")
                     Slider(value: $settings.ghostOpacity, in: 0.2...1.0)
                 }
+                Toggle("Text mirroring in web apps", isOn: $settings.textMirroring)
+                Text("Redraws your last word together with the suggestion on a matching backdrop, so both align perfectly in apps like Slack or Claude. Turn off to use plain ghost text everywhere.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section("Timing") {

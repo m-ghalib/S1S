@@ -1,17 +1,15 @@
 import AppKit
 import ApplicationServices
 
-/// Builds the text context sent to the model: the current input (the text before the
-/// caret in the focused field, or the keystroke buffer as a fallback) prefixed with
-/// the on-screen memory harvested by `ScreenContextProvider` (OCR of recently focused
-/// windows), so suggestions reflect what's on screen.
+/// Reads the text context for a prediction: the current input (text before the caret
+/// in the focused field, or the keystroke buffer as a fallback) and the text after
+/// the caret. Prompt assembly — including screen context — happens in `PromptBuilder`.
 enum ContextReader {
 
     struct Result {
-        /// The full prompt: remembered screen text, then the current input. Used only
-        /// as a dedup key (has the effective input changed since the last prediction)
-        /// — never sent to the model itself (see `PromptBuilder`).
-        var prompt: String
+        /// Dedup key: has the effective model input (screen context + typed input)
+        /// changed since the last prediction? Never sent to the model itself.
+        var dedupKey: String
         /// Just the text before the caret (the thing to continue).
         var input: String
         /// Text immediately after the caret, if the AX element exposes it (true
@@ -50,14 +48,9 @@ enum ContextReader {
             AccessibilityBridge.textAfterCaret(of: $0, maxChars: afterChars)
         } ?? ""
 
-        let prompt: String
-        if screenContext.isEmpty {
-            prompt = input
-        } else {
-            prompt = "\(screenContext)\n\n[Now typing]\n\(input)"
-        }
+        let dedupKey = screenContext.isEmpty ? input : "\(screenContext.hashValue)|\(input)"
 
-        return Result(prompt: prompt, input: input, afterCursor: afterCursor,
+        return Result(dedupKey: dedupKey, input: input, afterCursor: afterCursor,
                       focused: focused, window: window,
                       hasInput: !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }

@@ -24,10 +24,30 @@ import Tokenizers
 ///    is coalesced and automatically retried the moment the in-flight one finishes. If
 ///    that happens after the original caller already gave up, the result is delivered
 ///    via `onLateSuggestion` instead of a direct return.
+/// Reusable KV prefix cache. Consecutive keystrokes share almost their entire
+/// prompt (chat template header + system prompt + context + all-but-the-last-few
+/// typed characters), so instead of re-prefilling hundreds of static tokens per
+/// call, keep the KV state and prefill only the divergent suffix.
+///
+/// Not thread-safe by itself: safety comes from `ModelContainer` serializing
+/// `perform` calls and from `Predictor.isGenerating` allowing one generation at a
+/// time. Mutated only inside `container.perform`.
+final class PromptCache: @unchecked Sendable {
+    var cache: [KVCache] = []
+    var tokens: [Int] = []      // prompt tokens currently materialized in `cache`
+    var modelId: String = ""    // invalidate when the loaded model changes
+
+    func reset() {
+        cache = []
+        tokens = []
+    }
+}
+
 @MainActor
 final class Predictor {
     private let provider: ModelProvider
     private var generation = 0
+    private let promptCache = PromptCache()
 
     /// True while a generation is actually running on the model container. MLX's
     /// `ModelContainer` serializes `perform` calls, so if we let every keystroke queue
@@ -60,6 +80,13 @@ final class Predictor {
         self.provider = provider
     }
 
+    /// Whether the currently loaded model is a legacy base model (raw token
+    /// continuation, no chat template, no system prompt). Determines both the
+    /// prompt body format and the tokenization path in `generate`.
+    private var isBaseModel: Bool {
+        ModelCatalog.all.first(where: { $0.id == provider.readyModelId })?.isBase ?? true
+    }
+
     /// Invalidate any in-flight prediction's result (does not tear down GPU work).
     func cancel() { generation += 1 }
 
@@ -69,7 +96,7 @@ final class Predictor {
     /// rather than dropped.
     func predict(request: CompletionRequest) async -> String? {
         guard provider.container != nil else { return nil }
-        let context = PromptBuilder.body(request, cap: 1500, screenContextBudget: request.screenContextBudget)
+        let context = PromptBuilder.body(request, cap: 1500, chatFormat: !isBaseModel)
         guard !context.isEmpty else { return nil }
 
         guard !isGenerating else {
@@ -141,7 +168,8 @@ final class Predictor {
             pendingRequest = nil
             Task { [weak self] in
                 guard let self else { return }
-                let pendingContext = PromptBuilder.body(pending, cap: 1500, screenContextBudget: pending.screenContextBudget)
+                let pendingContext = PromptBuilder.body(pending, cap: 1500,
+                                                        chatFormat: !self.isBaseModel)
                 guard !pendingContext.isEmpty else { return }
                 _ = await self.runGeneration(context: pendingContext, request: pending, isDirectCall: false)
             }
@@ -174,20 +202,33 @@ final class Predictor {
         }
     }
 
+    /// Mild penalty only: autocomplete SHOULD reuse names/terms already present in
+    /// the user's text, and higher values (the old 1.15) suppress exactly those.
+    nonisolated private static let repetitionPenalty: Float = 1.05
+
+
     /// The actual MLX generation call — instruct models get a real system/user chat
-    /// template; legacy base models keep raw token continuation.
+    /// template; legacy base models keep raw token continuation. Prefill cost is
+    /// amortized via `PromptCache`: only the tokens that differ from the previous
+    /// call's prompt are fed through the model.
     private func generate(context: String, request: CompletionRequest,
                           container: ModelContainer) async -> String? {
-        let isBase = ModelCatalog.all.first(where: { $0.id == provider.readyModelId })?.isBase ?? true
+        let isBase = isBaseModel
         let maxTokens = request.maxTokens
         let maxWords = request.maxWords
         let temperature = Float(request.temperature)
+        let systemPrompt = CompletionInstructions.system(personalExamples: request.personalExamples)
+        let modelId = provider.readyModelId ?? ""
+        // A timed-out generation may still be running and mutating the shared cache
+        // (MLX streams can't be cancelled mid-flight) — never share KV state with it.
+        let hasZombie = consecutiveTimeouts > 0
+        let pc = promptCache
 
         return try? await container.perform { ctx -> String? in
             var params = GenerateParameters()
             params.maxTokens = maxTokens
             params.temperature = temperature
-            params.repetitionPenalty = 1.15
+            params.repetitionPenalty = Self.repetitionPenalty
 
             let ids: [Int]
             if isBase {
@@ -195,7 +236,7 @@ final class Predictor {
             } else {
                 do {
                     let messages: [Tokenizers.Message] = [
-                        ["role": "system", "content": CompletionInstructions.system],
+                        ["role": "system", "content": systemPrompt],
                         ["role": "user", "content": context],
                     ]
                     ids = try ctx.tokenizer.applyChatTemplate(messages: messages)
@@ -205,16 +246,94 @@ final class Predictor {
                 }
             }
             guard !ids.isEmpty else { return nil }
-            let input = LMInput(tokens: MLXArray(ids.map { Int32($0) }))
-            let stream = try MLXLMCommon.generate(
-                input: input, parameters: params, context: ctx)
 
-            var text = ""
-            for await item in stream {
-                if case .chunk(let s) = item { text += s }
+            // --- KV prefix cache: reuse the longest common token prefix. ---
+            if hasZombie || pc.modelId != modelId || pc.cache.isEmpty {
+                pc.reset()
+                pc.cache = ctx.model.newCache(parameters: params)
+                pc.modelId = modelId
+            }
+            var common = 0
+            let maxCommon = min(pc.tokens.count, ids.count - 1)   // must feed ≥1 token
+            while common < maxCommon, pc.tokens[common] == ids[common] { common += 1 }
+            if common < pc.tokens.count {
+                // Discard the divergent cached suffix; rebuild from scratch if the
+                // cache can't trim that much.
+                let need = pc.tokens.count - common
+                if trimPromptCache(pc.cache, numTokens: need) < need {
+                    pc.reset()
+                    pc.cache = ctx.model.newCache(parameters: params)
+                    common = 0
+                } else {
+                    pc.tokens = Array(pc.tokens.prefix(common))
+                }
+            }
+
+            let suffix = Array(ids[common...])
+            let input = LMInput(tokens: MLXArray(suffix.map { Int32($0) }))
+
+            // Custom TokenIterator so the StartGuard logit processor can veto bad
+            // FIRST tokens (immediate EOS → empty suggestion; "Sorry" reply-drift)
+            // at the sampler, instead of only filtering afterwards. Chains the
+            // parameter-derived processor (repetition penalty) inside.
+            var guardIds: [Int] = []
+            if let eos = ctx.tokenizer.eosTokenId { guardIds.append(eos) }
+            for opener in ["Sorry", " Sorry"] {
+                if let first = ctx.tokenizer.encode(text: opener, addSpecialTokens: false).first {
+                    guardIds.append(first)
+                }
+            }
+            let iterator = try TokenIterator(
+                input: input, model: ctx.model, cache: pc.cache,
+                processor: StartGuardProcessor(bannedFirst: guardIds, wrapped: params.processor()),
+                sampler: params.sampler(),
+                prefillStepSize: params.prefillStepSize,
+                maxTokens: params.maxTokens)
+            let result = MLXLMCommon.generate(input: input, context: ctx, iterator: iterator) { (_: [Int]) in .more }
+            let text = result.output
+
+            // Trim the generated tokens back off so the cache holds exactly this
+            // prompt — the next call's common prefix is then the whole shared prompt.
+            let extra = (pc.cache.first?.offset ?? 0) - ids.count
+            if extra >= 0, extra == 0 || trimPromptCache(pc.cache, numTokens: extra) >= extra {
+                pc.tokens = ids
+            } else {
+                pc.reset()
             }
             return SuggestionTrimmer.trim(text, maxWords: maxWords)
         }
+    }
+}
+
+/// Vetoes bad FIRST tokens at the sampler: an immediate EOS (empty suggestion) or
+/// a "Sorry"-style reply opener never gets sampled at all. Subsequent tokens pass
+/// through untouched; the wrapped processor (repetition penalty) always runs.
+final class StartGuardProcessor: LogitProcessor {
+    private let bannedFirst: [Int32]
+    private var wrapped: LogitProcessor?
+    private var step = 0
+
+    init(bannedFirst: [Int], wrapped: LogitProcessor?) {
+        self.bannedFirst = bannedFirst.map(Int32.init)
+        self.wrapped = wrapped
+    }
+
+    func prompt(_ prompt: MLXArray) {
+        step = 0
+        wrapped?.prompt(prompt)
+    }
+
+    func process(logits: MLXArray) -> MLXArray {
+        var logits = wrapped?.process(logits: logits) ?? logits
+        if step == 0, !bannedFirst.isEmpty {
+            logits[.ellipsis, MLXArray(bannedFirst)] = MLXArray(-Float.infinity)
+        }
+        return logits
+    }
+
+    func didSample(token: MLXArray) {
+        step += 1
+        wrapped?.didSample(token: token)
     }
 }
 
@@ -226,9 +345,19 @@ enum SuggestionTrimmer {
         if let nl = s.firstIndex(where: { $0 == "\n" || $0 == "\r" }) {
             s = String(s[..<nl])
         }
-        // 2) Cut at the first sentence terminator (keep it).
-        if let idx = s.firstIndex(where: { $0 == "." || $0 == "!" || $0 == "?" }) {
-            s = String(s[...idx])
+        // 2) Cut at the first sentence terminator (keep it) — but only when it
+        //    actually ends a sentence: end of text, or a space followed by a new
+        //    capitalized sentence. Abbreviations ("e.g. the plan") and decimals
+        //    ("2.5") survive; the word cap below still bounds the length.
+        var searchFrom = s.startIndex
+        while let idx = s[searchFrom...].firstIndex(where: { $0 == "." || $0 == "!" || $0 == "?" }) {
+            let next = s.index(after: idx)
+            let rest = s[next...].drop(while: { $0 == " " })
+            if next == s.endIndex || rest.isEmpty || (s[next] == " " && rest.first!.isUppercase) {
+                s = String(s[...idx])
+                break
+            }
+            searchFrom = next
         }
         // 3) Cap word count, preserving a leading space if present.
         let leadingSpace = s.first == " " ? " " : ""
