@@ -14,7 +14,9 @@
 
 <em>Keywords: Cotypist alternative · open source macOS autocomplete · local AI text prediction Mac · on-device LLM typing assistant · private ghost-text completion</em>
 
-<!-- TODO: add a demo.gif of ghost text being accepted with Tab -->
+<p align="center">
+  <img src="docs/demo.gif" alt="TabType demo — ghost-text suggestion appearing inline and being accepted word-by-word with Tab" width="820">
+</p>
 
 </div>
 
