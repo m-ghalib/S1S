@@ -25,7 +25,7 @@
 >
 > **This is an early alpha.** It works and it's genuinely useful day-to-day, but expect rough edges. It's an open-source project that **needs your help** — [try it](#-install), [file issues](../../issues), and [send PRs](CONTRIBUTING.md). Bug reports on specific apps are the single most valuable contribution right now.
 >
-> **Built by a senior full-stack engineer (5+ years), in the open, with heavy use of AI coding assistance.** Full transparency: AI was a real power tool throughout — but this is **not** a thin "AI generated a wrapper" app. It's a native macOS application with a hand-tuned local-inference pipeline, reverse-engineering work to reach parity with the best in the category, careful Accessibility/Gatekeeper/AppKit integration, and 50+ tests. The architecture, debugging, and the hundreds of small correctness decisions are the author's; AI accelerated the typing, not the engineering. More detail [below](#-full-disclosure--who-built-this-and-how).
+> **Built by a senior full-stack engineer (5+ years), in the open, with heavy use of AI.** Full transparency: AI was a real power tool throughout. The **code** was written with AI coding-assistant help; the **app icon/artwork and the documentation are AI-generated**; and **suggestions come from a third-party open-weights LLM** (Qwen3) running locally — TabType trains no models and reviews no output. This is still **not** a thin "AI generated a wrapper" app — it's a native macOS app with a hand-tuned local-inference pipeline and 50+ tests, with a human accountable for the architecture, debugging, and result. **See the complete [AI disclosure below](#-full-ai-disclosure--who-and-what-built-this).**
 
 ## 🙌 Help wanted — let's build the best open autocomplete for Mac
 
@@ -157,9 +157,21 @@ KeystrokeMonitor (CGEventTap)
 
 Personalization (`PhraseMemory`, `TypingHistoryStore`), per-app rules (`AppPolicy`), and the settings UI (`SettingsView`) hang off this core. See [CONTRIBUTING.md](CONTRIBUTING.md) for a fuller tour.
 
-## 🙋 Full disclosure — who built this, and how
+## 🙋 Full AI disclosure — who and what built this
 
-TabType is built by a **senior full-stack engineer with 5+ years of experience**, in the open, **with heavy use of AI coding assistance**. Full transparency: AI was a genuine power tool throughout — but this is **not** a thin "AI-generated a wrapper" app. It's a real native macOS application with a hand-tuned local-inference pipeline, reverse-engineering work to reach UX parity with the best in the category, careful accessibility/Gatekeeper/AppKit integration, and 50+ tests. The engineering judgment, debugging, architecture, and the hundreds of small correctness decisions are the author's. AI accelerated the typing; it didn't replace the engineering.
+TabType is built by a **senior full-stack engineer with 5+ years of experience**, in the open, **with heavy use of AI**. In the spirit of transparency, here is a complete accounting of what in this project is AI-generated:
+
+**Code** — Written with heavy AI coding-assistant help (in the [Claude Code](https://claude.com/claude-code) style), directed, reviewed, debugged, and architected by the author. This is **not** a thin "AI generated a wrapper" app: it's a native macOS application with a hand-tuned local-inference pipeline, reverse-engineering work to reach parity with the best in the category, careful Accessibility/Gatekeeper/AppKit integration, and 50+ tests. AI accelerated the typing; the engineering judgment and the hundreds of small correctness decisions are the author's.
+
+**Icons & artwork** — The app icon and other visual assets are **AI-generated**.
+
+**Documentation** — This README and the other docs (`CONTRIBUTING.md`, `RELEASING.md`, `docs/COMPARISON.md`, issue templates) were **written with AI assistance** and reviewed by the author.
+
+**The completion model** — Suggestions come from a **third-party, open-weights language model** (by default [Qwen3-4B-Instruct](https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-4bit) from Alibaba's Qwen team; Google's Gemma and others are also selectable). TabType did **not** train or fine-tune any model — it runs these pre-trained weights locally via [MLX](https://github.com/ml-explore/mlx). Their training data and behavior are the model authors', governed by their respective licenses (e.g. the Qwen and Gemma terms).
+
+**Runtime output provenance** — Every suggestion you see is **generated on-device by that language model** from your local context (the text you're typing, your recent messages/writing, and — with permission — nearby on-screen text). Outputs are probabilistic and **not curated, fact-checked, or reviewed** by a human or by us; treat them like any LLM output — they can be wrong, biased, or inappropriate. Nothing is sent to a server; generation is 100% local. TabType does not collect, transmit, or train on your text.
+
+**What is *not* AI** — the product direction, architecture, the decision of what to build and how it should feel, the debugging, and the responsibility for the result. A human is accountable for this software.
 
 ## 🤝 Contributing
 

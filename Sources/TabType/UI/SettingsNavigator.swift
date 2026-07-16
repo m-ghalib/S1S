@@ -11,6 +11,6 @@ final class SettingsNavigator: ObservableObject {
     @Published var pendingSection: SettingsView.Section?
     /// The content width the current section wants — AppDelegate animates the
     /// hosting window to this when it changes.
-    @Published var desiredContentWidth: CGFloat = 720
+    @Published var desiredContentWidth: CGFloat = 760
     private init() {}
 }

@@ -49,7 +49,7 @@ struct SettingsView: View {
                 }
                 .tag(section)
             }
-            .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 200, max: 230)
         } detail: {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -76,7 +76,7 @@ struct SettingsView: View {
     /// The Apps pane hosts a nested HSplitView (app list + detail) that needs more
     /// room; every other pane is a single column and reads better narrower.
     static func contentWidth(for section: Section) -> CGFloat {
-        section == .apps ? 940 : 720
+        section == .apps ? 980 : 760
     }
 
     @ViewBuilder private var detail: some View {
@@ -401,7 +401,10 @@ struct AppsSettingsView: View {
                 }
                 .listStyle(.sidebar)
             }
-            .frame(minWidth: 220, idealWidth: 240, maxHeight: .infinity)
+            // Narrow, capped list column so the detail pane always has room — the
+            // whole Apps pane must fit at the base window width WITHOUT relying on
+            // the window growing (sidebar ~200 + list ~220 + detail ≥300 ≤ 760).
+            .frame(minWidth: 200, idealWidth: 220, maxWidth: 280, maxHeight: .infinity)
 
             Group {
                 if selected == "__domains__" {
@@ -411,10 +414,10 @@ struct AppsSettingsView: View {
                 } else {
                     ContentUnavailableView("Select an app",
                         systemImage: "app.badge",
-                        description: Text("Choose an app on the left to customize TabType's behavior for it."))
+                        description: Text("Choose an app to customize TabType for it."))
                 }
             }
-            .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
+            .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
         }
         .onAppear(perform: reload)
     }

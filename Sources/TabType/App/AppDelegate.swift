@@ -256,7 +256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             window.title = "TabType Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.setContentSize(NSSize(width: SettingsNavigator.shared.desiredContentWidth, height: 620))
-            window.minSize = NSSize(width: 680, height: 460)
+            window.minSize = NSSize(width: 760, height: 460)
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.center()
@@ -274,13 +274,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+        // Honor the current section's width now that the window is visible (the
+        // sink's initial value arrived while it was still hidden).
+        resizeSettings(toContentWidth: SettingsNavigator.shared.desiredContentWidth)
     }
 
     /// Animate the settings window to a section's desired content width, keeping it
     /// on screen. Height is preserved (respects any manual vertical resize).
     private func resizeSettings(toContentWidth width: CGFloat) {
-        guard let window = settingsWindow, window.isVisible else { return }
+        guard let window = settingsWindow, window.isVisible else {
+            Log.shared.debug("resizeSettings(\(width)) skipped — window not visible")
+            return
+        }
         let currentContent = window.contentRect(forFrameRect: window.frame).size
+        Log.shared.debug("resizeSettings: \(currentContent.width) -> \(width)")
         guard abs(currentContent.width - width) > 1 else { return }
         var frame = window.frame
         let target = window.frameRect(forContentRect:
@@ -291,7 +298,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         if let vis = window.screen?.visibleFrame {
             frame.origin.x = min(max(frame.origin.x, vis.minX), vis.maxX - frame.width)
         }
-        window.animator().setFrame(frame, display: true)
+        // `setFrame(_:display:animate:)` is the reliable AppKit API — `animator()`
+        // outside an explicit animation context can silently no-op.
+        window.setFrame(frame, display: true, animate: true)
     }
 
     @objc private func showOnboarding() {
