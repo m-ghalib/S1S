@@ -31,6 +31,10 @@ struct KeyBinding: Codable, Equatable {
     static let tab = KeyBinding(keyCode: 48, modifiers: 0)
     static let shiftTab = KeyBinding(keyCode: 48, flags: .maskShift)
     static let escape = KeyBinding(keyCode: 53, modifiers: 0)
+    static let controlBacktick = KeyBinding(keyCode: 50, flags: .maskControl)
+    static let controlOptionSpace = KeyBinding(keyCode: 49, flags: [.maskControl, .maskAlternate])
+    static let controlOptionCommandP = KeyBinding(
+        keyCode: 35, flags: [.maskControl, .maskAlternate, .maskCommand])
 
     /// Human-readable, e.g. "⇧⇥" or "⌃Space".
     var displayString: String {

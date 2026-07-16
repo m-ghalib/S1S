@@ -59,6 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         // isn't actually loaded (the previous working model stays active meanwhile).
         provider.onReady = { [weak self] modelId in
             self?.settings.modelId = modelId
+            // Warm the KV cache with the static prompt prefix so the FIRST real
+            // suggestion skips its system-prompt prefill (1-4s on big models).
+            self?.engine.warmUpModel()
         }
 
         // Start loading the model + spell dictionary right away.
@@ -117,6 +120,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         if secureInputActive {
             menu.addItem(item("Secure Input is on — suggestions paused",
                               icon: "lock.fill", enabled: false))
+        }
+        if let pause = engine.frontmostAppPause() {
+            let mins = max(1, Int(pause.until.timeIntervalSinceNow / 60))
+            menu.addItem(item("Paused in this app (\(mins)m left) — Resume",
+                              icon: "pause.circle", action: #selector(resumeAppPause)))
         }
         menu.addItem(.separator())
 
@@ -228,6 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     @objc private func pause60() { engine.pause(minutes: 60); rebuildMenu() }
     @objc private func pauseIndefinitely() { engine.pause(minutes: nil); rebuildMenu() }
     @objc private func resumeNow() { engine.resume(); rebuildMenu() }
+    @objc private func resumeAppPause() { engine.resumeFrontmostAppPause(); rebuildMenu() }
 
     @objc private func openStatistics() {
         SettingsNavigator.shared.pendingSection = .statistics

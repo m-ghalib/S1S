@@ -104,7 +104,12 @@ struct ShortcutsPane: View {
                 KeyRecorderRow(title: "Accept word", binding: $settings.acceptWordKey)
                 KeyRecorderRow(title: "Accept whole suggestion", binding: $settings.acceptAllKey)
                 KeyRecorderRow(title: "Dismiss", binding: $settings.dismissKey)
+                KeyRecorderRow(title: "Word alternatives", binding: $settings.wordAlternativesKey)
+                KeyRecorderRow(title: "Force a suggestion", binding: $settings.forceActivateKey)
+                KeyRecorderRow(title: "Pause in current app (5 min)", binding: $settings.appPauseKey)
                 KeyRecorderRow(title: "Enable/disable TabType", binding: $settings.toggleKey, allowNone: true)
+                Text("Hold ⌥ with the accept key to send the real key to the app (e.g. ⌥Tab moves between form fields while a suggestion is shown).")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Accepting a word") {
                 Toggle("Include trailing space", isOn: $settings.includeTrailingSpace)

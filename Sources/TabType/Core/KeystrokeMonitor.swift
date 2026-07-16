@@ -14,6 +14,8 @@ import CoreGraphics
 enum ControlDecision {
     case swallow      // consume the event (we acted on it)
     case passthrough  // let it reach the app, but don't treat it as a text edit
+    case passthroughStrippingOption  // like passthrough, but remove ⌥ from the event
+                                     // (⌥Tab = "send a REAL Tab" while a ghost is up)
     case notControl   // not a control key — proceed to text handling
 }
 
@@ -91,6 +93,9 @@ final class KeystrokeMonitor {
         switch handleControlKey?(keyCode, flags) ?? .notControl {
         case .swallow: return nil
         case .passthrough: return Unmanaged.passUnretained(event)
+        case .passthroughStrippingOption:
+            event.flags = flags.subtracting(.maskAlternate)
+            return Unmanaged.passUnretained(event)
         case .notControl: break
         }
 

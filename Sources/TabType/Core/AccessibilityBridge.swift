@@ -104,6 +104,23 @@ enum AccessibilityBridge {
         return caret < full.count
     }
 
+    /// Children of an element (kAXChildren), or [] when unavailable.
+    static func children(of element: AXUIElement) -> [AXUIElement] {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value) == .success,
+              let array = value as? [AXUIElement] else { return [] }
+        return array
+    }
+
+    /// The element's AX role, or nil.
+    static func role(of element: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &value) == .success else {
+            return nil
+        }
+        return value as? String
+    }
+
     /// Whether the element is an EDITABLE text input. Selected-text-range alone is
     /// not enough — read-only static text and web areas expose it too (anything
     /// selectable does). Editability = a text-input role, or a settable value.

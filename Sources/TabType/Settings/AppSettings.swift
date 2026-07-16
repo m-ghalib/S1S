@@ -46,6 +46,9 @@ final class AppSettings: ObservableObject {
     @Published var acceptAllKey: KeyBinding { didSet { saveBinding(acceptAllKey, Keys.acceptAllKey) } }
     @Published var dismissKey: KeyBinding { didSet { saveBinding(dismissKey, Keys.dismissKey) } }
     @Published var toggleKey: KeyBinding { didSet { saveBinding(toggleKey, Keys.toggleKey) } }
+    @Published var forceActivateKey: KeyBinding { didSet { saveBinding(forceActivateKey, Keys.forceActivateKey) } }
+    @Published var appPauseKey: KeyBinding { didSet { saveBinding(appPauseKey, Keys.appPauseKey) } }
+    @Published var wordAlternativesKey: KeyBinding { didSet { saveBinding(wordAlternativesKey, Keys.wordAlternativesKey) } }
 
     // MARK: Text tools
     @Published var emojiEnabled: Bool { didSet { defaults.set(emojiEnabled, forKey: Keys.emojiEnabled) } }
@@ -249,6 +252,9 @@ final class AppSettings: ObservableObject {
         acceptAllKey = AppSettings.loadBinding(Keys.acceptAllKey, default: .shiftTab)
         dismissKey = AppSettings.loadBinding(Keys.dismissKey, default: .escape)
         toggleKey = AppSettings.loadBinding(Keys.toggleKey, default: .unset)
+        forceActivateKey = AppSettings.loadBinding(Keys.forceActivateKey, default: .controlBacktick)
+        appPauseKey = AppSettings.loadBinding(Keys.appPauseKey, default: .controlOptionCommandP)
+        wordAlternativesKey = AppSettings.loadBinding(Keys.wordAlternativesKey, default: .controlOptionSpace)
         disabledApps = Set(defaults.stringArray(forKey: Keys.disabledApps) ?? [])
 
         Log.shared.verbose = verboseLog
@@ -320,6 +326,9 @@ final class AppSettings: ObservableObject {
         static let acceptAllKey = "acceptAllKey"
         static let dismissKey = "dismissKey"
         static let toggleKey = "toggleKey"
+        static let forceActivateKey = "forceActivateKey"
+        static let appPauseKey = "appPauseKey"
+        static let wordAlternativesKey = "wordAlternativesKey"
         static let disabledApps = "disabledApps"
     }
 }

@@ -63,14 +63,35 @@ final class ScreenContextProvider: ObservableObject {
         // Capture the window the user is typing in (like cotabby/KeyType), and pass
         // the focused field's own text so we can strip it from the OCR (we don't want
         // to echo what's already being typed).
-        let frontPid = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let front = NSWorkspace.shared.frontmostApplication
+        let frontPid = front?.processIdentifier
+        let frontName = front?.localizedName ?? "Window"
+        let frontBid = front?.bundleIdentifier ?? ""
         let focused = AccessibilityBridge.focusedElement()
         let fieldText = focused.flatMap { AccessibilityBridge.stringValue(of: $0) } ?? ""
         let caretRect = focused.flatMap { AccessibilityBridge.caretRect(of: $0) }
         let windowFrame = AccessibilityBridge.focusedWindowFrame()
         let cropMode = AppSettings.shared.screenCropMode
+        // Chat apps: the conversation reads far cleaner from the AX tree than from
+        // pixels — try that first, OCR only as fallback.
+        let tryAXTranscript = AppPolicyStore.policy(forBundleId: frontBid).transcriptViaAX
+        let windowBox = tryAXTranscript
+            ? focused.flatMap { ContextReader.windowOf($0) }.map(AXElementBox.init) : nil
+        let focusedBox = focused.map(AXElementBox.init)
 
         Task.detached(priority: .utility) {
+            if let windowBox {
+                if let transcript = TranscriptExtractor.extract(
+                    windowElement: windowBox.element,
+                    excludingSubtreeOf: focusedBox?.element, budget: 900),
+                   transcript.count >= 80 {
+                    await MainActor.run {
+                        self.capturing = false
+                        self.append(app: frontName, bundleId: frontBid, text: transcript, source: "ax transcript")
+                    }
+                    return
+                }
+            }
             let capture = await ScreenContextProvider.captureFocusedWindow(
                 pid: frontPid, fieldText: fieldText, cropMode: cropMode, caretRect: caretRect, windowFrame: windowFrame)
             await MainActor.run {
@@ -84,7 +105,7 @@ final class ScreenContextProvider: ObservableObject {
         }
     }
 
-    private func append(app: String, bundleId: String, text: String) {
+    private func append(app: String, bundleId: String, text: String, source: String = "ocr") {
         // Skip if unchanged from the last entry we stored for this app.
         if let last = history.last(where: { $0.app == app }), last.text == text { return }
         history.append(Entry(time: Date(), app: app, bundleId: bundleId, text: text))
@@ -94,7 +115,7 @@ final class ScreenContextProvider: ObservableObject {
         if history.count > maxEntries {
             history.removeFirst(history.count - maxEntries)
         }
-        Log.shared.debug("screen memory: +\(text.count) chars from \(app) (bid=\(bundleId)) (entries=\(history.count))")
+        Log.shared.debug("screen memory: +\(text.count) chars from \(app) (bid=\(bundleId), \(source)) (entries=\(history.count))")
     }
 
     /// The freshest OCR snapshot for a specific bundle ID, capped to `cap` characters.

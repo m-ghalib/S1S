@@ -23,6 +23,12 @@ struct AppPolicy {
     /// Cotypist strategy — observed live): by idle time the bounds have caught up
     /// and inline ghosts place correctly.
     var laggyCaret: Bool = false
+    /// Code editors: suggest only in short chat inputs (sidebar panels), never the
+    /// main editor surface — prose autocomplete there fights code completion.
+    var chatPanelsOnly: Bool = false
+    /// Prefer extracting the conversation from the AX tree (chat apps) instead of
+    /// OCR; falls back to OCR when the tree yields too little.
+    var transcriptViaAX: Bool = false
     /// Overrides the default screen-context character budget for this app (nil = use
     /// the global default). Chat apps get a larger budget so more transcript survives.
     var screenContextCap: Int?
@@ -89,6 +95,15 @@ enum AppPolicyStore {
         "notion.id", "md.obsidian",
     ]
 
+    /// Code editors: prose autocomplete in the MAIN EDITOR collides with actual
+    /// code completion — activate only in sidebar chat inputs (the Cotypist
+    /// behavior documented on its compatibility page).
+    private static let codeEditorApps: Set<String> = [
+        "com.microsoft.VSCode", "com.todesktop.230313mzl4w4u92" /* Cursor */,
+        "com.exafunction.windsurf", "com.apple.dt.Xcode",
+    ]
+    private static let codeEditorBundlePrefixes = ["com.jetbrains."]
+
     /// Electron/Chromium apps whose AX caret bounds lag the real caret while
     /// typing (observed ~0.5s in Claude Desktop) — inline ghost placement can't be
     /// trusted there; suggestions render as a bubble above the caret instead.
@@ -117,6 +132,8 @@ enum AppPolicyStore {
         if chatApps.contains(id) {
             policy.forceScreenContext = true
             policy.screenContextCap = 700
+            // Chat transcripts read far cleaner from the AX tree than from OCR.
+            policy.transcriptViaAX = true
         }
         // Electron/web apps: AX caret bounds lag behind the real caret while
         // typing — present only after a typing pause, and never mid-line (the
@@ -124,6 +141,10 @@ enum AppPolicyStore {
         if electronApps.contains(id) {
             policy.laggyCaret = true
             policy.allowsMidLine = false
+        }
+        if codeEditorApps.contains(id)
+            || codeEditorBundlePrefixes.contains(where: { id.hasPrefix($0) }) {
+            policy.chatPanelsOnly = true
         }
         switch id {
         case "com.apple.Safari": policy.fontFactor = 0.98
@@ -138,6 +159,32 @@ enum AppPolicyStore {
             policy.autocorrectOverride = o.autocorrectEnabled
             if o.improveCompatibility { policy.insertionStrategy = .paste }
             policy.customInstructions = o.customInstructions
+        }
+        return policy
+    }
+
+    /// Overrides keyed by website host use a `domain:` prefix in the same store.
+    static func domainKey(_ host: String) -> String { "domain:" + host.lowercased() }
+
+    /// Policy for a bundle id AND the current website — the domain override is
+    /// applied last (most specific wins). `host` matches exactly or by suffix
+    /// ("mail.google.com" matches an override for "google.com").
+    static func policy(forBundleId id: String?, host: String?) -> AppPolicy {
+        var policy = policy(forBundleId: id)
+        guard let host = host?.lowercased() else { return policy }
+        let match = userOverrides.first { key, _ in
+            guard key.hasPrefix("domain:") else { return false }
+            let domain = String(key.dropFirst("domain:".count))
+            return host == domain || host.hasSuffix("." + domain)
+        }
+        if let (_, o) = match {
+            if let e = o.enabled { policy.isEnabled = e }
+            if let m = o.midLineEnabled { policy.allowsMidLine = m }
+            if !o.customInstructions.isEmpty {
+                policy.customInstructions = policy.customInstructions.isEmpty
+                    ? o.customInstructions
+                    : policy.customInstructions + " " + o.customInstructions
+            }
         }
         return policy
     }

@@ -54,6 +54,48 @@ final class PhraseMemoryTests: XCTestCase {
         XCTAssertTrue(body.contains("distributed systems"))
     }
 
+    func testAlternativesRankedByFrequency() {
+        let m = makeMemory([
+            "let me know if that works",
+            "let me know if that helps",
+            "let me know if that works",
+        ])
+        let alts = m.alternatives(after: "please let me know if that", limit: 2)
+        XCTAssertEqual(alts.first, "works")
+        XCTAssertEqual(alts.count, 2)
+    }
+
+    func testTranscriptAssemblyOrdersAndBudgets() {
+        let lines: [(text: String, y: CGFloat, x: CGFloat)] = [
+            ("second message arrives here with more words", 200, 10),
+            ("the first message in the conversation thread", 100, 10),
+            ("third reply lands at the bottom of the chat", 300, 10),
+        ]
+        let out = TranscriptExtractor.assemble(lines: lines, budget: 2000)
+        XCTAssertNotNil(out)
+        let first = out!.range(of: "first message")!.lowerBound
+        let second = out!.range(of: "second message")!.lowerBound
+        let third = out!.range(of: "third reply")!.lowerBound
+        XCTAssertTrue(first < second && second < third)
+        // Budget keeps the SUFFIX (most recent messages).
+        let tight = TranscriptExtractor.assemble(lines: lines, budget: 50)
+        XCTAssertTrue(tight?.contains("third reply") == true)
+        XCTAssertFalse(tight?.contains("first message") == true)
+    }
+
+    func testDomainOverrideAppliesOnTopOfAppPolicy() {
+        let saved = AppPolicyStore.userOverrides
+        defer { AppPolicyStore.userOverrides = saved }
+        var override = AppOverride()
+        override.customInstructions = "Formal tone."
+        AppPolicyStore.userOverrides = [AppPolicyStore.domainKey("linkedin.com"): override]
+
+        let p = AppPolicyStore.policy(forBundleId: "com.google.Chrome", host: "www.linkedin.com")
+        XCTAssertTrue(p.customInstructions.contains("Formal tone."))
+        let other = AppPolicyStore.policy(forBundleId: "com.google.Chrome", host: "github.com")
+        XCTAssertFalse(other.customInstructions.contains("Formal tone."))
+    }
+
     func testDynamicFewShotRendering() {
         let pairs = [
             TypingHistoryStore.AcceptPair(prefixTail: "see you", accepted: "tomorrow at the office"),

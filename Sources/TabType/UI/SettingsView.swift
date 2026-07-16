@@ -534,8 +534,59 @@ private struct DomainsPane: View {
                     }
                 }
             }
+            Section("Website instructions") {
+                Text("Tune suggestions per website — e.g. a different language or tone on a specific site. Applied on top of app settings.")
+                    .font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    TextField("Domain (e.g. linkedin.com)", text: $newInstructionDomain)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 190)
+                    TextField("Instructions (e.g. Formal tone, no emoji)", text: $newInstructionText)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Add", action: addDomainInstructions)
+                        .disabled(newInstructionDomain.trimmingCharacters(in: .whitespaces).isEmpty
+                                  || newInstructionText.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                ForEach(domainInstructionKeys, id: \.self) { key in
+                    let host = String(key.dropFirst("domain:".count))
+                    HStack(alignment: .top) {
+                        Image(systemName: "text.bubble").foregroundStyle(.secondary)
+                        VStack(alignment: .leading) {
+                            Text(host).fontWeight(.medium)
+                            Text(settings.appOverrides[key]?.customInstructions ?? "")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            settings.appOverrides.removeValue(forKey: key)
+                        } label: { Image(systemName: "minus.circle.fill").foregroundStyle(.secondary) }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
         }
         .formStyle(.grouped)
+    }
+
+    @State private var newInstructionDomain = ""
+    @State private var newInstructionText = ""
+
+    private var domainInstructionKeys: [String] {
+        settings.appOverrides.keys.filter { $0.hasPrefix("domain:") }.sorted()
+    }
+
+    private func addDomainInstructions() {
+        var d = newInstructionDomain.trimmingCharacters(in: .whitespaces).lowercased()
+        d = d.replacingOccurrences(of: "https://", with: "")
+             .replacingOccurrences(of: "http://", with: "")
+        if let slash = d.firstIndex(of: "/") { d = String(d[..<slash]) }
+        let text = newInstructionText.trimmingCharacters(in: .whitespaces)
+        guard !d.isEmpty, !text.isEmpty else { return }
+        var override = settings.appOverrides[AppPolicyStore.domainKey(d)] ?? AppOverride()
+        override.customInstructions = text
+        settings.appOverrides[AppPolicyStore.domainKey(d)] = override
+        newInstructionDomain = ""
+        newInstructionText = ""
     }
 
     private func addDomain() {

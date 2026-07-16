@@ -61,7 +61,7 @@ enum ContextReader {
     }
 
     /// Walk up to the enclosing window element.
-    private static func windowOf(_ element: AXUIElement) -> AXUIElement? {
+    static func windowOf(_ element: AXUIElement) -> AXUIElement? {
         var value: CFTypeRef?
         if AXUIElementCopyAttributeValue(element, kAXWindowAttribute as CFString, &value) == .success,
            let value {

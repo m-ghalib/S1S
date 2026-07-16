@@ -14,6 +14,9 @@ final class Engine {
     private let overlay = SuggestionOverlay()
     private let inlineCommand: InlineCommandController
     private let accessory = AccessoryButton()
+    private let alternatives = AlternativesController()
+    /// The last non-speculative request, kept for word-alternatives regeneration.
+    private var lastReq: CompletionRequest?
 
     /// Fallback context buffer, used when the Accessibility API can't provide the
     /// focused field's text. Rebuilt on focus change.
@@ -44,6 +47,28 @@ final class Engine {
     /// MID-BURST for a snapshot of the input, served instantly at the next pause
     /// when the typed text still matches (possibly having typed INTO it — LCP).
     private var parked: (input: String, suggestion: String)?
+    /// One-shot bypass of prediction gates (force-activate shortcut).
+    private var forceNextPrediction = false
+    /// Per-app temporary pauses (bundle id → resume time).
+    private var pausedApps: [String: Date] = [:]
+    /// One-shot log flag for the chat-panels-only skip.
+    private var loggedChatPanelSkip: Set<String> = []
+
+    /// Code editors (`chatPanelsOnly`): allow only short text inputs — sidebar
+    /// chat composers — never the tall main-editor surface.
+    private func allowedByChatPanelPolicy(_ policy: AppPolicy, element: AXUIElement?,
+                                          bundleId: String?) -> Bool {
+        guard policy.chatPanelsOnly, !forceNextPrediction else { return true }
+        if let element, AccessibilityBridge.isTextInput(element),
+           let frame = AccessibilityBridge.elementFrame(of: element),
+           frame.height <= 280 {
+            return true
+        }
+        if let bundleId, loggedChatPanelSkip.insert(bundleId).inserted {
+            Log.shared.info("chat-panels-only: suppressing in \(bundleId)'s editor surface (sidebar chat inputs stay active)")
+        }
+        return false
+    }
 
     /// Handles for the ghost-dismissal observers (app switch, mouse click).
     private var workspaceObserver: NSObjectProtocol?
@@ -183,6 +208,91 @@ final class Engine {
         }
     }
 
+    /// Word alternatives: numbered list of alternative next words. Candidates:
+    /// the current suggestion's first word, the phrase memory's top continuations,
+    /// a dictionary completion (mid-word), plus one higher-temperature model
+    /// regeneration that streams in when ready.
+    private func showWordAlternatives() {
+        let caretRect = AccessibilityBridge.focusedElement()
+            .flatMap { AccessibilityBridge.caretRect(of: $0) }
+        var initial: [String] = []
+        if let suggestion = currentSuggestion,
+           let first = suggestion.split(whereSeparator: { $0 == " " || $0 == "\n" }).first {
+            initial.append(String(first))
+        }
+        initial += PhraseMemory.shared.alternatives(after: buffer, limit: 2)
+        guard !initial.isEmpty || lastReq != nil else { return }
+        alternatives.show(candidates: initial.isEmpty ? ["…"] : initial, caretRect: caretRect)
+        let gen = alternatives.currentGeneration
+
+        // Mid-word dictionary completion joins asynchronously.
+        let partial = String(buffer.reversed().prefix { $0.isLetter }.reversed())
+        if partial.count >= 3 {
+            Task { [weak self] in
+                guard let self else { return }
+                if let word = await SpellChecker.shared.completion(
+                    for: partial, language: self.settings.autocorrectLanguage) {
+                    self.alternatives.addCandidate(String(word.dropFirst(partial.count)),
+                                                   forGeneration: gen, caretRect: caretRect)
+                }
+            }
+        }
+        // One higher-temperature regeneration for a genuinely different option.
+        if var req = lastReq {
+            req.temperature = 0.7
+            req.maxTokens = 8
+            req.maxWords = 2
+            Task { [weak self] in
+                guard let self else { return }
+                guard let raw = await self.router.current.complete(req),
+                      let first = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                          .split(whereSeparator: { $0 == " " || $0 == "\n" }).first else { return }
+                self.alternatives.addCandidate(String(first), forGeneration: gen, caretRect: caretRect)
+            }
+        }
+    }
+
+    /// Insert a chosen alternative word (accept-word bookkeeping included).
+    private func insertAlternative(_ word: String) {
+        alternatives.hide()
+        overlay.hide()
+        currentSuggestion = nil
+        let toInsert = word + (settings.includeTrailingSpace ? " " : "")
+        buffer += toInsert
+        Statistics.shared.recordAccepted(wordCount: 1)
+        if settings.collectTypingHistory { TypingHistoryStore.shared.record(toInsert) }
+        let strategy = AppPolicyStore.policy(forBundleId: AccessibilityBridge.frontmostBundleId())
+            .insertionStrategy
+        let baselineLen = AccessibilityBridge.focusedElement()
+            .flatMap { AccessibilityBridge.stringValue(of: $0)?.count }
+        DispatchQueue.main.async {
+            self.lastKeystrokeAt = Date()
+            TextInserter.insert(toInsert, strategy: strategy)
+            self.hostBaselineLen = baselineLen
+            self.hostExpectedLen = baselineLen.map { $0 + toInsert.count }
+            self.schedulePrediction()
+        }
+    }
+
+    /// Warm the model's KV prefix cache with the static prompt head (system prompt
+    /// + chat template + persona) so the first real suggestion skips that prefill.
+    func warmUpModel() {
+        let personalExamples: [TypingHistoryStore.AcceptPair] =
+            (settings.collectTypingHistory && TypingHistoryStore.shared.acceptCount >= 5)
+            ? TypingHistoryStore.shared.recentAccepts(limit: 2) : []
+        let req = CompletionRequest(
+            beforeCursor: "Hello", afterCursor: "", screenContext: "", clipboard: "",
+            persona: settings.personaPreface, personalExamples: personalExamples,
+            previousWriting: [], speculative: true,
+            maxWords: 1, maxTokens: 1, temperature: 0.0)
+        Task { [weak self] in
+            guard let self else { return }
+            let start = Date()
+            _ = await self.router.current.complete(req)
+            Log.shared.info("model warm-up finished in \(Int(Date().timeIntervalSince(start) * 1000))ms — static prompt prefix cached")
+        }
+    }
+
     /// Pause suggestions for `minutes`, or indefinitely if nil, until `resume()`.
     func pause(minutes: Int?) {
         pausedUntil = minutes.map { Date().addingTimeInterval(TimeInterval($0 * 60)) } ?? .distantFuture
@@ -191,6 +301,17 @@ final class Engine {
 
     func resume() {
         pausedUntil = nil
+    }
+
+    /// Active per-app pause for the frontmost app, if any (for the menu).
+    func frontmostAppPause() -> (bundleId: String, until: Date)? {
+        guard let bid = AccessibilityBridge.frontmostBundleId(),
+              let until = pausedApps[bid], Date() < until else { return nil }
+        return (bid, until)
+    }
+
+    func resumeFrontmostAppPause() {
+        if let bid = AccessibilityBridge.frontmostBundleId() { pausedApps[bid] = nil }
     }
 
     var isPaused: Bool {
@@ -234,22 +355,66 @@ final class Engine {
 
     /// Map a keydown against configured shortcut bindings and navigation keys.
     private func handleControlKey(keyCode: Int64, flags: CGEventFlags) -> ControlDecision {
+        // Word-alternatives panel intercepts digits/Escape while open.
+        if alternatives.isActive {
+            let digitKeys: [Int64: Int] = [18: 1, 19: 2, 20: 3, 21: 4]   // 1-4 row keys
+            if let index = digitKeys[keyCode], let word = alternatives.candidate(at: index) {
+                insertAlternative(word)
+                return .swallow
+            }
+            alternatives.hide()
+            if keyCode == 53 { return .swallow }   // Esc: just close
+            // Any other key closes the panel and proceeds normally.
+        }
+        if settings.wordAlternativesKey.matches(keyCode: keyCode, flags: flags) {
+            showWordAlternatives()
+            return .swallow
+        }
+
         // Global enable/disable toggle.
         if settings.toggleKey.matches(keyCode: keyCode, flags: flags) {
             settings.isEnabled.toggle()
             return .swallow
         }
+        // Force-activate: one-shot bypass of the prediction gates (short input,
+        // mid-line policy, chat-panels-only) — Cotypist's Ctrl+`.
+        if settings.forceActivateKey.matches(keyCode: keyCode, flags: flags) {
+            forceNextPrediction = true
+            runPrediction()
+            forceNextPrediction = false
+            return .swallow
+        }
+        // Per-app temporary pause toggle (a few minutes in the frontmost app).
+        if settings.appPauseKey.matches(keyCode: keyCode, flags: flags) {
+            if let bid = AccessibilityBridge.frontmostBundleId() {
+                if pausedApps[bid] != nil {
+                    pausedApps[bid] = nil
+                    Log.shared.info("per-app pause lifted for \(bid)")
+                } else {
+                    pausedApps[bid] = Date().addingTimeInterval(5 * 60)
+                    clearSuggestion()
+                    Log.shared.info("suggestions paused 5 min in \(bid)")
+                }
+            }
+            return .swallow
+        }
         // Per-app override: some apps need Tab to keep its native meaning (e.g. IDEs).
         let tabDisabled = keyCode == 48
             && AppPolicyStore.policy(forBundleId: AccessibilityBridge.frontmostBundleId()).disableTabKey
+        // ⌥+accept-key sends the REAL key through (form navigation with a ghost up).
+        let optionPassthrough = flags.contains(.maskAlternate)
+            && !CGEventFlags(rawValue: settings.acceptWordKey.modifiers).contains(.maskAlternate)
+            && !CGEventFlags(rawValue: settings.acceptAllKey.modifiers).contains(.maskAlternate)
 
         // Accept whole suggestion.
-        if settings.acceptAllKey.matches(keyCode: keyCode, flags: flags) {
+        if settings.acceptAllKey.matches(keyCode: keyCode, flags: flags.subtracting(optionPassthrough ? .maskAlternate : [])) {
+            if optionPassthrough { clearSuggestion(); return .passthroughStrippingOption }
             if tabDisabled { return .passthrough }
             return acceptCurrent(whole: true) ? .swallow : .passthrough
         }
         // Accept a word (or an inline command). Honors the "accept whole" preference.
-        if settings.acceptWordKey.matches(keyCode: keyCode, flags: flags) {
+        if settings.acceptWordKey.matches(keyCode: keyCode, flags: flags.subtracting(optionPassthrough ? .maskAlternate : [])) {
+            if optionPassthrough { clearSuggestion(); return .passthroughStrippingOption }
             if tabDisabled { return .passthrough }
             return acceptCurrent(whole: settings.acceptWholeLine) ? .swallow : .passthrough
         }
@@ -360,7 +525,11 @@ final class Engine {
         loggedDisabled = false
 
         // On a word boundary: replace an emoticon, else autocorrect the finished word.
-        let autocorrectAllowed = policy.autocorrectOverride ?? settings.autocorrectEnabled
+        // Never autocorrect a code editor's main surface (identifiers aren't typos).
+        let autocorrectAllowed = (policy.autocorrectOverride ?? settings.autocorrectEnabled)
+            && (!policy.chatPanelsOnly
+                || allowedByChatPanelPolicy(policy, element: AccessibilityBridge.focusedElement(),
+                                            bundleId: bundleId))
         if !isDeletion, let ch = chars.last, ch == " " || ch == "\n" {
             if !(settings.emoticonsEnabled && replaceEmoticon(boundary: ch)), autocorrectAllowed {
                 maybeAutocorrect()
@@ -421,14 +590,15 @@ final class Engine {
     /// caret THEN, and presents. A newer keystroke re-arms the wait; a changed
     /// suggestion aborts it.
     private func presentWhenSettled(suggestion: String, isNewSuggestion: Bool,
-                                    allowWrap: Bool = false) {
+                                    allowWrap: Bool = false, minSettle: TimeInterval? = nil) {
         // Register immediately: any keystroke during the wait clears/replaces it
         // (clearSuggestion / type-through), aborting the scheduled presentation.
         currentSuggestion = suggestion
         let policy = AppPolicyStore.policy(forBundleId: AccessibilityBridge.frontmostBundleId())
-        // Electron bounds were observed still ~9 chars stale 250ms after the last
-        // keystroke — 0.5s matches when Cotypist's ghost appears there.
-        let settle: TimeInterval = policy.laggyCaret ? 0.5 : 0.12
+        // Electron bounds lag ~0.3s after the last keystroke; 0.4s matches the
+        // observed Cotypist timing, with the occupancy/ink-band guards as backstop.
+        // A caller can lower it (parked seeds: content already proven ready).
+        let settle: TimeInterval = minSettle ?? (policy.laggyCaret ? 0.4 : 0.12)
         let elapsed = Date().timeIntervalSince(lastKeystrokeAt)
         if elapsed >= settle {
             guard currentSuggestion == suggestion else { return }
@@ -442,7 +612,7 @@ final class Engine {
         DispatchQueue.main.asyncAfter(deadline: .now() + (settle - elapsed) + 0.01) { [weak self] in
             guard let self, self.currentSuggestion == suggestion else { return }
             self.presentWhenSettled(suggestion: suggestion, isNewSuggestion: isNewSuggestion,
-                                    allowWrap: allowWrap)
+                                    allowWrap: allowWrap, minSettle: minSettle)
         }
     }
 
@@ -493,7 +663,7 @@ final class Engine {
                 guard let self, token == self.scheduleToken else { return }
                 self.runPrediction(speculative: true)
             }
-            poll(0.32)   // idle-wait ≈ the presentation settle; AX text is complete by then
+            poll(0.2)    // brief idle-wait; the freshness guard + re-kick cover stale input
         } else if useContinuous {
             poll(0.02)   // minimal settle — just a chance for host-publish, no idle-wait
         } else {
@@ -691,7 +861,7 @@ final class Engine {
         // Wait for at least 1 word on the current line before predicting (or a very long first word).
         let currentLine = input.split(separator: "\n", omittingEmptySubsequences: false).last ?? ""
         let lineTrimmed = currentLine.trimmingCharacters(in: .whitespaces)
-        guard lineTrimmed.contains(where: { $0.isWhitespace }) || lineTrimmed.count >= 6 else { return false }
+        guard lineTrimmed.contains(where: { $0.isWhitespace }) || lineTrimmed.count >= 3 else { return false }
         if let last = input.last, "/@".contains(last) { return false }
         if let lastWord = input.split(whereSeparator: { $0 == " " || $0 == "\n" }).last,
            lastWord.contains("://") {
@@ -718,7 +888,9 @@ final class Engine {
         let front = NSWorkspace.shared.frontmostApplication
         let frontApp = front?.localizedName
         let bundleId = front?.bundleIdentifier
-        let policy = AppPolicyStore.policy(forBundleId: bundleId)
+        // Domain-specific overrides (browsers): most specific policy wins.
+        let host = AccessibilityBridge.frontmostURLHost()
+        let policy = AppPolicyStore.policy(forBundleId: bundleId, host: host)
         guard policy.isEnabled else { return }
 
         // Paused after Escape, or conserving battery (on-demand only).
@@ -766,7 +938,7 @@ final class Engine {
             return
         }
 
-        guard ctx.hasInput, Engine.shouldPredict(ctx.input) else { return }
+        guard ctx.hasInput, forceNextPrediction || Engine.shouldPredict(ctx.input) else { return }
 
         // With only a few chars typed, a small model latches onto whatever context
         // it sees — drop screen noise until there's real signal to continue. Chat
@@ -784,6 +956,15 @@ final class Engine {
             return
         }
 
+        // Code editors: only sidebar chat inputs, never the main editor.
+        guard allowedByChatPanelPolicy(policy, element: ctx.focused, bundleId: bundleId) else { return }
+
+        // Per-app temporary pause (shortcut-toggled, a few minutes).
+        if let bid = bundleId, let until = pausedApps[bid] {
+            if Date() < until { return }
+            pausedApps[bid] = nil
+        }
+
         // Never autocomplete a password field.
         if policy.excludesSecureField, let f = ctx.focused, AccessibilityBridge.isSecureField(f) {
             Log.shared.debug("predict skipped: secure field in \(bundleId ?? "?")")
@@ -791,7 +972,8 @@ final class Engine {
         }
 
         // Per-app "mid-line completions" override.
-        if !policy.allowsMidLine, let f = ctx.focused, AccessibilityBridge.hasTextAfterCaret(of: f) {
+        if !forceNextPrediction, !policy.allowsMidLine, let f = ctx.focused,
+           AccessibilityBridge.hasTextAfterCaret(of: f) {
             Log.shared.debug("predict skipped: mid-line disabled for \(bundleId ?? "?")")
             return
         }
@@ -806,7 +988,7 @@ final class Engine {
             parked = nil
             if ctx.input == p.input {
                 Log.shared.debug("predict -> \"\(p.suggestion)\" [parked] (0ms)")
-                presentWhenSettled(suggestion: p.suggestion, isNewSuggestion: true)
+                presentWhenSettled(suggestion: p.suggestion, isNewSuggestion: true, minSettle: 0.25)
                 return
             }
             // The user typed INTO the parked suggestion — serve the remaining tail.
@@ -816,7 +998,7 @@ final class Engine {
                    p.suggestion.count > typedExtra.count {
                     let tail = String(p.suggestion.dropFirst(typedExtra.count))
                     Log.shared.debug("predict -> \"\(tail)\" [parked lcp] (0ms)")
-                    presentWhenSettled(suggestion: tail, isNewSuggestion: true)
+                    presentWhenSettled(suggestion: tail, isNewSuggestion: true, minSettle: 0.25)
                     return
                 }
             }
@@ -854,6 +1036,7 @@ final class Engine {
                 ? min(settings.maxWords, 3) : settings.maxWords,
             maxTokens: settings.maxTokens,
             temperature: settings.temperature)
+        if !speculative { lastReq = req }   // word-alternatives regeneration basis
         Log.shared.debug("predict app=\(bundleId ?? "?") engine=\(engine.displayName) focused=\(ctx.focused != nil) screenCtx=\(screenContext.count) inputTail=\"\(String(ctx.input.suffix(40)))\"")
         if settings.verboseLog {
             let fullPrompt = PromptBuilder.body(req, cap: 1500)
@@ -1300,9 +1483,12 @@ final class Engine {
     }
 
     private func updateAccessoryButton() {
+        let bundleId = AccessibilityBridge.frontmostBundleId()
+        let policy = AppPolicyStore.policy(forBundleId: bundleId)
         guard settings.showAccessoryButton,
               let element = AccessibilityBridge.focusedElement(),
               AccessibilityBridge.isTextInput(element),   // not a button/link/web area
+              allowedByChatPanelPolicy(policy, element: element, bundleId: bundleId),
               let windowRect = ContextReader.windowRect(of: element) else {
             accessory.hide(); return
         }
@@ -1315,6 +1501,7 @@ final class Engine {
         router.cancelInFlight()
         currentSuggestion = nil
         hostExpectedLen = nil
+        alternatives.hide()
         overlay.hide()
     }
 }

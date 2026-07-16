@@ -52,6 +52,15 @@ final class PhraseMemory {
         return out.isEmpty ? nil : out.joined(separator: " ")
     }
 
+    /// The top-ranked next words after the trailing trigram (for word alternatives).
+    func alternatives(after input: String, limit: Int = 2) -> [String] {
+        let words = Self.tokenize(input)
+        guard words.count >= 3 else { return [] }
+        let key = Self.key(Array(words.suffix(3)))
+        guard let candidates = next[key] else { return [] }
+        return candidates.sorted { $0.value > $1.value }.prefix(limit).map(\.key)
+    }
+
     // MARK: - Tokenization
 
     nonisolated private static func tokenize(_ text: String) -> [String] {
