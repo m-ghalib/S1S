@@ -8,6 +8,7 @@ import SwiftUI
 enum SectionAccent {
     static func color(for section: SettingsView.Section) -> Color {
         switch section {
+        case .setup: return .blue
         case .general: return .gray
         case .engine: return .indigo
         case .context: return .orange

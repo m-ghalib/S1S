@@ -3,6 +3,7 @@ import AppKit
 
 struct SettingsView: View {
     enum Section: String, CaseIterable, Identifiable {
+        case setup = "Setup"
         case general = "General"
         case engine = "Engine & Model"
         case context = "Context"
@@ -19,6 +20,7 @@ struct SettingsView: View {
         var id: String { rawValue }
         var icon: String {
             switch self {
+            case .setup: return "checkmark.seal"
             case .general: return "gearshape"
             case .engine: return "cpu"
             case .context: return "doc.text.magnifyingglass"
@@ -35,7 +37,7 @@ struct SettingsView: View {
         }
     }
 
-    @State private var selection: Section? = .general
+    @State private var selection: Section? = .setup
     @ObservedObject private var navigator = SettingsNavigator.shared
 
     var body: some View {
@@ -53,25 +55,33 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationTitle((selection ?? .general).rawValue)
-        // 200 (sidebar) + 220 (Apps list) + 380 (Apps detail) + splitter overhead —
-        // below this, AppsSettingsView's HSplitView panes get clipped (see
-        // AppsSettingsView doc comment).
-        .frame(minWidth: 900, minHeight: 460)
+        .frame(minWidth: 680, minHeight: 460)
         .onAppear {
             if let pending = navigator.pendingSection {
                 selection = pending
                 navigator.pendingSection = nil
             }
+            navigator.desiredContentWidth = Self.contentWidth(for: selection ?? .general)
         }
         .onChange(of: navigator.pendingSection) { _, pending in
             guard let pending else { return }
             selection = pending
             navigator.pendingSection = nil
         }
+        .onChange(of: selection) { _, newValue in
+            navigator.desiredContentWidth = Self.contentWidth(for: newValue ?? .general)
+        }
+    }
+
+    /// The Apps pane hosts a nested HSplitView (app list + detail) that needs more
+    /// room; every other pane is a single column and reads better narrower.
+    static func contentWidth(for section: Section) -> CGFloat {
+        section == .apps ? 940 : 720
     }
 
     @ViewBuilder private var detail: some View {
-        switch selection ?? .general {
+        switch selection ?? .setup {
+        case .setup: SetupPane()
         case .general: GeneralSettingsView()
         case .engine: ModelSettingsView()
         case .context: ContextPane()

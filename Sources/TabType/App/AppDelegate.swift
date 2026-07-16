@@ -255,14 +255,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             let window = NSWindow(contentViewController: hosting)
             window.title = "TabType Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            window.setContentSize(NSSize(width: 900, height: 620))
-            // Must match SettingsView's `.frame(minWidth:)` — otherwise the user can
-            // resize below what the Apps pane's HSplitView actually needs, clipping it.
-            window.minSize = NSSize(width: 900, height: 460)
+            window.setContentSize(NSSize(width: SettingsNavigator.shared.desiredContentWidth, height: 620))
+            window.minSize = NSSize(width: 680, height: 460)
             window.isReleasedWhenClosed = false
             window.delegate = self
             window.center()
             settingsWindow = window
+            // SwiftUI can't drive an AppKit-hosted window's size, so the settings
+            // content publishes the width each section wants and we animate to it.
+            SettingsNavigator.shared.$desiredContentWidth
+                .removeDuplicates()
+                .sink { [weak self] width in self?.resizeSettings(toContentWidth: width) }
+                .store(in: &cancellables)
         }
         // Give TabType a Dock icon + Cmd-Tab entry while Settings is open — as a
         // menu-bar-only (.accessory) app, clicking another app would otherwise send
@@ -270,6 +274,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Animate the settings window to a section's desired content width, keeping it
+    /// on screen. Height is preserved (respects any manual vertical resize).
+    private func resizeSettings(toContentWidth width: CGFloat) {
+        guard let window = settingsWindow, window.isVisible else { return }
+        let currentContent = window.contentRect(forFrameRect: window.frame).size
+        guard abs(currentContent.width - width) > 1 else { return }
+        var frame = window.frame
+        let target = window.frameRect(forContentRect:
+            NSRect(x: 0, y: 0, width: width, height: currentContent.height)).size
+        // Grow/shrink around the current center, then nudge back on screen.
+        frame.origin.x -= (target.width - frame.width) / 2
+        frame.size.width = target.width
+        if let vis = window.screen?.visibleFrame {
+            frame.origin.x = min(max(frame.origin.x, vis.minX), vis.maxX - frame.width)
+        }
+        window.animator().setFrame(frame, display: true)
     }
 
     @objc private func showOnboarding() {
