@@ -41,7 +41,7 @@ No corporate backing, no paid tier, no ads — just trying to make something gre
 
 ## What it is
 
-As you type, TabType shows a dimmed **ghost-text** prediction of what comes next. Press **Tab** to accept a word, again for the next, or accept the whole thing at once. A local language model ([Qwen3-4B](https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-4bit) via Apple's [MLX](https://github.com/ml-explore/mlx)) generates the suggestions, personalized to how *you* write — and it all happens on-device.
+As you type, TabType shows a dimmed **ghost-text** prediction of what comes next. Press **Tab** to accept a word, again for the next, or accept the whole thing at once. A local language model ([Qwen3-4B](https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-4bit) via Apple's [MLX](https://github.com/ml-explore/mlx); on 24 GB+ Macs the higher-precision [8-bit build](https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-8bit) is recommended automatically) generates the suggestions, personalized to how *you* write — and it all happens on-device.
 
 ## ✨ Features
 
@@ -116,7 +116,7 @@ There are a few other open-source macOS autocomplete projects — each great in 
 4. Open **System Settings ▸ Privacy & Security**, scroll down, and click **"Open Anyway"** next to TabType. Confirm.
    - *Power users, instead of steps 3–4:* `xattr -dr com.apple.quarantine /Applications/TabType.app`
 5. Grant **Accessibility** when prompted (required — it's how TabType reads the text field and inserts completions). **Screen Recording** is optional (improves context in non-chat apps).
-6. **First launch downloads the model** (~2.3 GB from Hugging Face). The menu-bar icon shows progress; suggestions start once it's ready.
+6. **First launch downloads the model** (~2.3–4.3 GB from Hugging Face, depending on your Mac's RAM tier). The menu-bar icon shows progress; suggestions start once it's ready.
 
 **Requirements:** Apple Silicon Mac (M1 or later), macOS 14+.
 

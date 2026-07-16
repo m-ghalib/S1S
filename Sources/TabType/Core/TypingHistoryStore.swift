@@ -1,13 +1,12 @@
 import Foundation
 import CryptoKit
-import Security
 
 /// Local, encrypted store of typed/accepted text snippets, used only to build a
 /// short "words you use often" hint for the personalize-word-choice slider. Off by
 /// default. Nothing here ever leaves the Mac: the file on disk is AES-GCM encrypted
-/// with a key held in the Keychain (`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`),
-/// mirroring the "encrypted and stored locally" guarantee Cotypist's own Personalization
-/// pane advertises.
+/// with a 256-bit key kept in a 0600 file (complete file protection) alongside it —
+/// a filesystem-permission approach that (unlike the Keychain) never prompts for
+/// the login password across rebuilds or code-signature changes.
 @MainActor
 final class TypingHistoryStore: ObservableObject {
     static let shared = TypingHistoryStore()
@@ -31,9 +30,9 @@ final class TypingHistoryStore: ObservableObject {
     private let maxEntries = 500
     private let maxAccepts = 50
     private let fileURL: URL
+    private let keyURL: URL
 
-    /// Whether stored history exists on disk — checkable WITHOUT instantiating the
-    /// singleton (whose first touch reads the Keychain and may prompt).
+    /// Whether stored history exists on disk.
     nonisolated static var historyFileExists: Bool {
         FileManager.default.fileExists(atPath: defaultFileURL.path)
     }
@@ -49,9 +48,7 @@ final class TypingHistoryStore: ObservableObject {
             .appendingPathComponent("TabType", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         fileURL = dir.appendingPathComponent("typing-history.enc")
-        // Only touch the Keychain (and possibly prompt) when there is actually a
-        // history file to decrypt — a fresh store creates its key lazily on the
-        // first `record`, so merely opening Settings never triggers a prompt.
+        keyURL = dir.appendingPathComponent("history.key")
         if FileManager.default.fileExists(atPath: fileURL.path) {
             load()
         }
@@ -164,7 +161,7 @@ final class TypingHistoryStore: ObservableObject {
     // MARK: - Encrypted persistence
 
     private func persist() {
-        guard let key = Self.encryptionKey(),
+        guard let key = encryptionKey(),
               let data = try? JSONEncoder().encode(Snapshot(entries: entries, accepts: accepts)),
               let sealed = try? AES.GCM.seal(data, using: key).combined
         else { return }
@@ -172,7 +169,7 @@ final class TypingHistoryStore: ObservableObject {
     }
 
     private func load() {
-        guard let key = Self.encryptionKey(),
+        guard let key = encryptionKey(),
               let sealed = try? Data(contentsOf: fileURL),
               let box = try? AES.GCM.SealedBox(combined: sealed),
               let data = try? AES.GCM.open(box, using: key)
@@ -186,40 +183,26 @@ final class TypingHistoryStore: ObservableObject {
         entryCount = entries.count
     }
 
-    // MARK: - Keychain-held key
+    // MARK: - Encryption key (file-based)
 
-    private static let keychainAccount = "app.tabtype.typinghistory.key"
-
-    private static func encryptionKey() -> SymmetricKey? {
-        if let existing = readKeychainKey() { return existing }
-        let newKey = SymmetricKey(size: .bits256)
-        writeKeychainKey(newKey)
-        return newKey
-    }
-
-    private static func readKeychainKey() -> SymmetricKey? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: keychainAccount,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data else { return nil }
-        return SymmetricKey(data: data)
-    }
-
-    private static func writeKeychainKey(_ key: SymmetricKey) {
+    /// The AES key lives in a 0600 file next to the encrypted history, NOT the
+    /// Keychain. Keychain access is gated by the app's code signature, so it
+    /// prompted for the login password on every rebuild / signature change (and
+    /// mid-typing when history was touched). A permission-locked key file keeps
+    /// the history encrypted at rest without any signature dependency or prompts.
+    private func encryptionKey() -> SymmetricKey? {
+        if let data = try? Data(contentsOf: keyURL), data.count == 32 {
+            return SymmetricKey(data: data)
+        }
+        let key = SymmetricKey(size: .bits256)
         let data = key.withUnsafeBytes { Data($0) }
-        let baseQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: keychainAccount,
-        ]
-        SecItemDelete(baseQuery as CFDictionary)
-        var attrs = baseQuery
-        attrs[kSecValueData as String] = data
-        attrs[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(attrs as CFDictionary, nil)
+        do {
+            try data.write(to: keyURL, options: [.atomic, .completeFileProtection])
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: keyURL.path)
+        } catch {
+            return nil
+        }
+        return key
     }
 }
