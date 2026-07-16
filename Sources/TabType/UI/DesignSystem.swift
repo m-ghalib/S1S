@@ -18,7 +18,6 @@ enum SectionAccent {
         case .battery: return .green
         case .apps: return .red
         case .advanced: return .blue
-        case .labs: return .mint
         case .statistics: return .cyan
         case .about: return .brown
         }

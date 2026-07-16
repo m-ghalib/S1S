@@ -56,8 +56,11 @@ app)
         echo "WARNING: default.metallib not found — GPU inference will fail." >&2
     fi
 
-    # Info.plist
+    # Info.plist & Icon
     cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+    if [ -f "$ROOT/Resources/AppIcon.icns" ]; then
+        cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+    fi
 
     # Code signature. Prefer the stable self-signed "TabType Dev" identity (set up via
     # Scripts/setup-signing.sh) so macOS keeps Accessibility/Screen Recording grants

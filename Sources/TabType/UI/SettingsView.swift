@@ -13,7 +13,6 @@ struct SettingsView: View {
         case battery = "Battery"
         case apps = "Apps"
         case advanced = "Advanced"
-        case labs = "TabType Labs"
         case statistics = "Statistics"
         case about = "About"
 
@@ -30,7 +29,6 @@ struct SettingsView: View {
             case .battery: return "battery.100"
             case .apps: return "app.badge"
             case .advanced: return "slider.horizontal.3"
-            case .labs: return "flask"
             case .statistics: return "chart.bar"
             case .about: return "info.circle"
             }
@@ -84,7 +82,6 @@ struct SettingsView: View {
         case .battery: BatteryPane()
         case .apps: AppsSettingsView()
         case .advanced: AdvancedSettingsView()
-        case .labs: LabsPane()
         case .statistics: StatisticsPane()
         case .about: AboutPane()
         }
@@ -159,7 +156,7 @@ struct GeneralSettingsView: View {
             Section("Timing") {
                 Toggle("Suggest continuously while typing", isOn: $settings.continuousGeneration)
                 Text(settings.continuousGeneration
-                     ? "Requests a suggestion on nearly every keystroke, so completions keep pace with fast typing. Uses more CPU while actively typing."
+                     ? "Requests a suggestion on nearly every keystroke, so completions keep pace with fast typing. Uses more CPU while actively typing. Web apps like Slack or Claude always wait for a brief pause regardless."
                      : "Waits for a pause in typing before requesting a suggestion.")
                     .font(.caption).foregroundStyle(.secondary)
                 if !settings.continuousGeneration {
@@ -623,7 +620,7 @@ struct AdvancedSettingsView: View {
                     Text("Context window")
                     Slider(value: Binding(
                         get: { Double(settings.contextChars) },
-                        set: { settings.contextChars = Int($0) }), in: 100...2000, step: 50)
+                        set: { settings.contextChars = Int($0) }), in: 100...1300, step: 50)
                     Text("\(settings.contextChars)").monospacedDigit()
                         .foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
                 }
@@ -642,8 +639,8 @@ struct AdvancedSettingsView: View {
             Section {
                 Button("Reset to Defaults", role: .destructive) {
                     settings.temperature = 0.1
-                    settings.maxTokens = 18
-                    settings.contextChars = 800
+                    settings.maxTokens = 28
+                    settings.contextChars = 1200
                     settings.verboseLog = false
                 }
             }

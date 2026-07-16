@@ -52,6 +52,27 @@ enum PromptBuilder {
         var after = req.afterCursor.trimmingCharacters(in: .whitespacesAndNewlines)
         if !after.isEmpty { afterBudget = min(after.count, remaining) }
 
+        // The author's own previous messages in this conversation — the freshest
+        // statement of intent. BUDGETED right after the fill-in-the-middle text,
+        // RENDERED last inside <context> (closest to the input).
+        var recentMessagesBlock: String?
+        if !req.recentMessages.isEmpty, remaining - afterBudget > minSectionBudget {
+            var msgBudget = remaining - afterBudget
+            var msgs: [String] = []
+            for m in req.recentMessages.suffix(3).reversed() {   // newest first for budget
+                let t = m.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !t.isEmpty, t.count <= msgBudget else { continue }
+                msgs.insert(t, at: 0)                            // restore chronological order
+                msgBudget -= t.count
+            }
+            if !msgs.isEmpty {
+                recentMessagesBlock = "<your_previous_messages>\n"
+                    + msgs.joined(separator: "\n")
+                    + "\n</your_previous_messages>"
+                remaining -= msgs.reduce(0) { $0 + $1.count }
+            }
+        }
+
         if !req.previousWriting.isEmpty, remaining - afterBudget > minSectionBudget {
             var writingBudget = remaining - afterBudget
             var samples: [String] = []
@@ -92,6 +113,8 @@ enum PromptBuilder {
             ctxParts.append("<on_screen>\n\(screen)\n</on_screen>")
             remaining -= screen.count
         }
+        if let recentMessagesBlock { ctxParts.append(recentMessagesBlock) }
+
         if !ctxParts.isEmpty {
             body += "<context>\n" + ctxParts.joined(separator: "\n\n") + "\n</context>\n\n"
         }

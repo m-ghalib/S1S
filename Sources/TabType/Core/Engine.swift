@@ -51,6 +51,24 @@ final class Engine {
     private var forceNextPrediction = false
     /// Per-app temporary pauses (bundle id → resume time).
     private var pausedApps: [String: Date] = [:]
+    /// Lightweight conversational context: the user's last few COMMITTED inputs
+    /// per app (chat fields empty on every send, so without this the model never
+    /// sees what the user has been saying). In-memory only.
+    private var recentInputs: [String: [String]] = [:]
+
+    /// Snapshot the buffer as a committed message (Return pressed / field cleared).
+    private func commitRecentInput(bundleId: String?) {
+        guard let bundleId else { return }
+        let text = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.count >= 4 else { return }
+        var list = recentInputs[bundleId] ?? []
+        if list.last != text {
+            list.append(String(text.suffix(300)))
+            if list.count > 3 { list.removeFirst(list.count - 3) }
+            recentInputs[bundleId] = list
+        }
+        buffer = ""   // the message left the field
+    }
     /// One-shot log flag for the chat-panels-only skip.
     private var loggedChatPanelSkip: Set<String> = []
 
@@ -165,10 +183,21 @@ final class Engine {
                 guard hadSuggestion || self.settings.showAccessoryButton else { return }
                 let beforeElement = AccessibilityBridge.focusedElement()
                 let beforeCaret = beforeElement.flatMap { AccessibilityBridge.caretOffset(of: $0) }
+                let beforeLen = beforeElement.flatMap { AccessibilityBridge.stringValue(of: $0)?.count }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                     // A click is exactly when text focus appears/disappears with no
                     // keystroke — re-evaluate the accessory button either way.
                     self.updateAccessoryButton()
+                    // Send-button click: the field emptied without a keystroke —
+                    // remember what was said (same as Return-to-send).
+                    if let beforeLen, beforeLen >= 4, self.buffer.count >= 4,
+                       let e = AccessibilityBridge.focusedElement(),
+                       let afterLen = AccessibilityBridge.stringValue(of: e)?.count, afterLen <= 1 {
+                        let bid = AccessibilityBridge.frontmostBundleId()
+                        if AppPolicyStore.policy(forBundleId: bid).laggyCaret {
+                            self.commitRecentInput(bundleId: bid)
+                        }
+                    }
                     guard self.currentSuggestion != nil else { return }
                     let afterElement = AccessibilityBridge.focusedElement()
                     let afterCaret = afterElement.flatMap { AccessibilityBridge.caretOffset(of: $0) }
@@ -444,6 +473,14 @@ final class Engine {
         let navKeys: Set<Int64> = [36, 123, 124, 125, 126, 116, 121, 115, 119] // return, arrows, page/home/end
         if navKeys.contains(keyCode) {
             if inlineCommand.isActive { inlineCommand.cancel() }
+            // Return in a chat app usually SENDS — remember what was said, so the
+            // next suggestion can continue the user's side of the conversation.
+            if keyCode == 36, !flags.contains(.maskShift) {
+                let bid = AccessibilityBridge.frontmostBundleId()
+                if AppPolicyStore.policy(forBundleId: bid).laggyCaret {
+                    commitRecentInput(bundleId: bid)
+                }
+            }
             clearSuggestion()
             return .passthrough
         }
@@ -668,7 +705,7 @@ final class Engine {
             poll(0.02)   // minimal settle — just a chance for host-publish, no idle-wait
         } else {
             // Initial settle = the configured debounce (+ battery back-off), then fast polls.
-            let baseDebounce = settings.labsUltraFastDebounce ? 40 : settings.debounceMs
+            let baseDebounce = settings.debounceMs
             let settle = baseDebounce + PowerMonitor.shared.extraDebounceMs
             poll(Double(settle) / 1000.0)
         }
@@ -787,10 +824,6 @@ final class Engine {
     private func reconcileMidWord(_ suggestion: String, prefix: String, elapsedMs: UInt64) async -> String? {
         let noLeadingSpace = suggestion.hasPrefix(" ") ? String(suggestion.dropFirst()) : suggestion
         guard !noLeadingSpace.isEmpty else { return nil }
-
-        guard !settings.labsDisableMidWordGuard else {
-            return suggestion.isEmpty ? nil : suggestion   // trust the model's own formatting
-        }
 
         let partial = String(prefix.reversed().prefix { $0.isLetter }.reversed())
         let fragment = String(noLeadingSpace.prefix { $0.isLetter || $0 == "'" })
@@ -1022,6 +1055,8 @@ final class Engine {
         // The author's own recent writing — the strongest voice/topic context.
         let previousWriting: [String] = settings.collectTypingHistory
             ? TypingHistoryStore.shared.contextSamples(budget: 350) : []
+        // The user's last few sent messages in THIS app — conversational thread.
+        let recentMessages = bundleId.flatMap { recentInputs[$0] } ?? []
         let req = CompletionRequest(
             beforeCursor: ctx.input,
             afterCursor: ctx.afterCursor,
@@ -1030,6 +1065,7 @@ final class Engine {
             persona: persona,
             personalExamples: personalExamples,
             previousWriting: previousWriting,
+            recentMessages: recentMessages,
             speculative: speculative,
             screenContextBudget: screenCap,
             maxWords: (PowerMonitor.shared.isLowPower && settings.batteryShorterCompletions)

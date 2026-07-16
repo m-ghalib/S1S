@@ -32,6 +32,7 @@ let package = Package(
             ],
             path: "Sources/TabType",
             resources: [
+                .process("Resources/Assets.xcassets"),
                 .process("Resources/emoji.json"),
                 .process("Resources/frequency_dictionary_en.txt"),
                 .process("Resources/frequency_dictionary_es.txt"),

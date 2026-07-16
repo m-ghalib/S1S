@@ -8,15 +8,17 @@ struct ContextPane: View {
 
     var body: some View {
         Form {
-            Section("Screenshot Settings") {
-                Toggle("Use screenshots for context", isOn: $settings.useScreenContext)
-                Picker("Extraction mode", selection: $settings.screenCropMode) {
+            Section("Screen Context") {
+                Toggle("Read on-screen context", isOn: $settings.useScreenContext)
+                Text("Reads the conversation or document around your cursor — via the accessibility tree in chat apps, or an on-device screenshot elsewhere — so suggestions match what you're working on. Chat apps like Slack and Claude always use this.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Picker("Screenshot extraction mode", selection: $settings.screenCropMode) {
                     ForEach(AppSettings.ScreenCropMode.allCases, id: \.self) { mode in
                         Text(mode.rawValue).tag(mode)
                     }
                 }
                 .disabled(!settings.useScreenContext)
-                Text("Reads the window you're typing in to understand its context and give more relevant completions. Columnar and Caret-Aware modes help ignore sidebars in chat apps.")
+                Text("Applies only when falling back to screenshot OCR. Caret-Aware focuses on the text around your cursor; Columnar helps with multi-column windows.")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Use screenshots to improve suggestion appearance", isOn: $settings.useScreenshotAppearance)
                 Text("Samples the color around the caret so ghost text blends with the field's real text. May occasionally show a Screen Recording indicator in the menu bar.")
@@ -326,7 +328,7 @@ struct EmojiPane: View {
     }
 }
 
-/// Battery-saving behavior on battery power.
+/// Power-saving behavior in Low Power Mode.
 struct BatteryPane: View {
     @EnvironmentObject var settings: AppSettings
     var body: some View {
@@ -334,15 +336,15 @@ struct BatteryPane: View {
             Section {
                 Label(PowerMonitor.shared.isLowPower
                       ? "Low Power Mode is on — these settings are active."
-                      : "These settings take effect on battery / Low Power Mode.",
+                      : "These settings take effect while macOS Low Power Mode is on.",
                       systemImage: "bolt")
                     .font(.callout).foregroundStyle(.secondary)
             }
-            Section("On battery power") {
+            Section("In Low Power Mode") {
                 Toggle("Only show completions on demand", isOn: $settings.batteryOnDemandOnly)
                 Toggle("Generate slightly shorter completions", isOn: $settings.batteryShorterCompletions)
                 Toggle("Fall back to debounced suggestions", isOn: $settings.batteryUseDebounce)
-                Text("Reduces power draw. When Apple Intelligence is the engine, impact is minimal; this mainly helps the local model. \"Fall back to debounced suggestions\" automatically steps down from continuous generation (General ▸ Timing) while on battery, without needing to turn it off manually.")
+                Text("Reduces power draw. When Apple Intelligence is the engine, impact is minimal; this mainly helps the local model. \"Fall back to debounced suggestions\" automatically steps down from continuous generation (General ▸ Timing) in Low Power Mode, without needing to turn it off manually.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -379,34 +381,7 @@ struct StatisticsPane: View {
 }
 
 /// Experimental, opt-in features that may change or be removed.
-struct LabsPane: View {
-    @EnvironmentObject var settings: AppSettings
 
-    var body: some View {
-        Form {
-            Section {
-                Label("Labs features are experimental — they may change behavior in ways that aren't fully tuned yet.",
-                      systemImage: "flask")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-            Section("Suggestions") {
-                Toggle("Disable mid-word plausibility check", isOn: $settings.labsDisableMidWordGuard)
-                Text("TabType normally verifies a mid-word completion forms part of a real word before showing it. Disable this if you find it too conservative.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle("Ultra-fast debounce (40ms)", isOn: $settings.labsUltraFastDebounce)
-                Text("Shows suggestions sooner after you pause typing. May feel jumpier and increase model load.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section {
-                Button("Reset to Defaults", role: .destructive) {
-                    settings.labsDisableMidWordGuard = false
-                    settings.labsUltraFastDebounce = false
-                }
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
 
 struct AboutPane: View {
     var body: some View {

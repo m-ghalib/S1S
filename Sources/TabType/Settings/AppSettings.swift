@@ -72,8 +72,6 @@ final class AppSettings: ObservableObject {
     @Published var batteryUseDebounce: Bool { didSet { defaults.set(batteryUseDebounce, forKey: Keys.batteryUseDebounce) } }
 
     // MARK: TabType Labs (experimental)
-    @Published var labsDisableMidWordGuard: Bool { didSet { defaults.set(labsDisableMidWordGuard, forKey: Keys.labsDisableMidWordGuard) } }
-    @Published var labsUltraFastDebounce: Bool { didSet { defaults.set(labsUltraFastDebounce, forKey: Keys.labsUltraFastDebounce) } }
     @Published var autocorrectLanguage: String { didSet { defaults.set(autocorrectLanguage, forKey: Keys.autocorrectLanguage) } }
 
     // MARK: Advanced
@@ -177,15 +175,13 @@ final class AppSettings: ObservableObject {
     }
 
     // MARK: Apps (per-app enable/disable by bundle identifier)
-    /// If true, the disabledApps set is a denylist. TabType runs everywhere except these.
-    @Published var disabledApps: Set<String> { didSet { defaults.set(Array(disabledApps), forKey: Keys.disabledApps) } }
 
     private init() {
         isEnabled = defaults.object(forKey: Keys.isEnabled) as? Bool ?? true
         debounceMs = defaults.object(forKey: Keys.debounceMs) as? Int ?? 90
         continuousGeneration = defaults.object(forKey: Keys.continuousGeneration) as? Bool ?? true
-        // 24 tokens: 18 could truncate a 6-word completion mid-word with Qwen's
-        // tokenizer; SuggestionTrimmer bounds the visible length regardless.
+        // 28 tokens: enough for an 8-word completion without mid-word truncation
+        // on Qwen's tokenizer; SuggestionTrimmer bounds the visible length anyway.
         maxTokens = defaults.object(forKey: Keys.maxTokens) as? Int ?? 28
         maxWords = defaults.object(forKey: Keys.maxWords) as? Int ?? 8
         acceptWholeLine = defaults.object(forKey: Keys.acceptWholeLine) as? Bool ?? false
@@ -242,8 +238,6 @@ final class AppSettings: ObservableObject {
         batteryOnDemandOnly = defaults.object(forKey: Keys.batteryOnDemandOnly) as? Bool ?? false
         batteryShorterCompletions = defaults.object(forKey: Keys.batteryShorterCompletions) as? Bool ?? false
         batteryUseDebounce = defaults.object(forKey: Keys.batteryUseDebounce) as? Bool ?? true
-        labsDisableMidWordGuard = defaults.object(forKey: Keys.labsDisableMidWordGuard) as? Bool ?? false
-        labsUltraFastDebounce = defaults.object(forKey: Keys.labsUltraFastDebounce) as? Bool ?? false
         // Default autocorrect language to the system language if we ship it, else English.
         let sysLang = Locale.current.language.languageCode?.identifier ?? "en"
         autocorrectLanguage = defaults.string(forKey: Keys.autocorrectLanguage)
@@ -255,7 +249,6 @@ final class AppSettings: ObservableObject {
         forceActivateKey = AppSettings.loadBinding(Keys.forceActivateKey, default: .controlBacktick)
         appPauseKey = AppSettings.loadBinding(Keys.appPauseKey, default: .controlOptionCommandP)
         wordAlternativesKey = AppSettings.loadBinding(Keys.wordAlternativesKey, default: .controlOptionSpace)
-        disabledApps = Set(defaults.stringArray(forKey: Keys.disabledApps) ?? [])
 
         Log.shared.verbose = verboseLog
         AppPolicyStore.userOverrides = appOverrides
@@ -270,10 +263,9 @@ final class AppSettings: ObservableObject {
         return b
     }
 
+    /// Global enable only — per-app enablement lives in `appOverrides`/`AppPolicy`.
     func isEnabled(forBundleId bundleId: String?) -> Bool {
-        guard isEnabled else { return false }
-        guard let bundleId else { return true }
-        return !disabledApps.contains(bundleId)
+        isEnabled
     }
 
     private enum Keys {
@@ -320,8 +312,6 @@ final class AppSettings: ObservableObject {
         static let batteryOnDemandOnly = "batteryOnDemandOnly"
         static let batteryUseDebounce = "batteryUseDebounce"
         static let batteryShorterCompletions = "batteryShorterCompletions"
-        static let labsDisableMidWordGuard = "labsDisableMidWordGuard"
-        static let labsUltraFastDebounce = "labsUltraFastDebounce"
         static let acceptWordKey = "acceptWordKey"
         static let acceptAllKey = "acceptAllKey"
         static let dismissKey = "dismissKey"
@@ -329,6 +319,5 @@ final class AppSettings: ObservableObject {
         static let forceActivateKey = "forceActivateKey"
         static let appPauseKey = "appPauseKey"
         static let wordAlternativesKey = "wordAlternativesKey"
-        static let disabledApps = "disabledApps"
     }
 }

@@ -26,7 +26,7 @@ enum CompletionInstructions {
     2. DO NOT repeat any of the existing text.
     3. Match the author's language, casing, tone, and punctuation exactly.
     4. If the text is a question addressed to someone else, keep writing the question — do not answer it.
-    5. A <context> block may show the author's recent writing, text after the cursor, clipboard contents, or nearby on-screen text. Use it only as background — it reflects the author's voice and current topics; never copy it verbatim and never respond to it.
+    5. A <context> block may show the author's recent writing, their previous messages in this conversation, text after the cursor, clipboard contents, or nearby on-screen text. Use it only as background — <your_previous_messages> is the author's own side of the conversation, so continue THAT train of thought; never copy context verbatim and never respond to it.
     6. Prefer finishing the current sentence naturally before starting a new one.
 
     Examples:

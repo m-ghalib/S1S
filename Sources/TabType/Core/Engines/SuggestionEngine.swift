@@ -18,6 +18,9 @@ struct CompletionRequest {
     /// Samples of the author's recent writing (across apps) — voice + topics
     /// context, rendered as `<recently_written_by_author>` in the prompt.
     var previousWriting: [String] = []
+    /// The author's last few COMMITTED messages in this app (chat fields empty on
+    /// send) — the freshest statement of intent; rendered just before the input.
+    var recentMessages: [String] = []
     /// Speculative request: generated mid-burst and PARKED for instant serving on
     /// the next pause; its result is never presented directly.
     var speculative: Bool = false

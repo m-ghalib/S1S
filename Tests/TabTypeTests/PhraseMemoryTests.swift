@@ -38,6 +38,25 @@ final class PhraseMemoryTests: XCTestCase {
         XCTAssertNil(m.continuation(after: "one"))
     }
 
+    func testRecentMessagesRenderedLastAndBudgetedHigh() {
+        let req = CompletionRequest(
+            beforeCursor: "and then I ", afterCursor: "", screenContext: "SCREENTEXT",
+            clipboard: "", persona: "",
+            recentMessages: ["we should ship the build tonight", "the tests are all green"],
+            maxWords: 8, maxTokens: 28, temperature: 0.1)
+        let body = PromptBuilder.body(req, cap: 1500)
+        guard let m = body.range(of: "<your_previous_messages>"),
+              let s = body.range(of: "<on_screen>"),
+              let input = body.range(of: "Input:") else {
+            return XCTFail("missing sections in: \(body)")
+        }
+        // Rendered closest to the input (after screen), chronological inside.
+        XCTAssertTrue(s.lowerBound < m.lowerBound && m.lowerBound < input.lowerBound)
+        let first = body.range(of: "ship the build")!.lowerBound
+        let second = body.range(of: "tests are all green")!.lowerBound
+        XCTAssertTrue(first < second)
+    }
+
     func testPreviousWritingRenderedBeforeClipboardAndScreen() {
         let req = CompletionRequest(
             beforeCursor: "Hello wor", afterCursor: "", screenContext: "SCREENTEXT",
