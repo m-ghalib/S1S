@@ -20,8 +20,24 @@
 
 ---
 
-> [!WARNING]
-> **TabType is an early alpha.** It works and it's genuinely useful day-to-day, but expect rough edges. This is an open-source project that **needs your help** — [try it](#-install), [file issues](../../issues), and [send PRs](CONTRIBUTING.md). Your bug reports on specific apps are the single most valuable contribution right now.
+> [!IMPORTANT]
+> **Alpha + AI disclosure — please read first.**
+>
+> **This is an early alpha.** It works and it's genuinely useful day-to-day, but expect rough edges. It's an open-source project that **needs your help** — [try it](#-install), [file issues](../../issues), and [send PRs](CONTRIBUTING.md). Bug reports on specific apps are the single most valuable contribution right now.
+>
+> **Built by a senior full-stack engineer (5+ years), in the open, with heavy use of AI coding assistance.** Full transparency: AI was a real power tool throughout — but this is **not** a thin "AI generated a wrapper" app. It's a native macOS application with a hand-tuned local-inference pipeline, reverse-engineering work to reach parity with the best in the category, careful Accessibility/Gatekeeper/AppKit integration, and 50+ tests. The architecture, debugging, and the hundreds of small correctness decisions are the author's; AI accelerated the typing, not the engineering. More detail [below](#-full-disclosure--who-built-this-and-how).
+
+## 🙌 Help wanted — let's build the best open autocomplete for Mac
+
+TabType is a solo, spare-time, non-commercial project, and it will only get better with a community around it. **If you find it useful, please pitch in** — every bit genuinely moves the needle:
+
+- ⭐ **Star the repo** so others can find a free, private Cotypist alternative.
+- 🐞 **Report bugs** — especially "ghost text is off in _app X_" or "no suggestions in _app Y_." These are the highest-value reports right now. [Open an issue »](../../issues/new/choose)
+- 🧑‍💻 **Send a PR** — per-app fixes, more languages, UI polish. See [good first issues](../../issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) and [CONTRIBUTING.md](CONTRIBUTING.md).
+- 🍎 **Have an Apple Developer ID?** Help with notarization so new users skip the Gatekeeper warning.
+- 💬 **Share feedback & ideas** in [Discussions](../../discussions).
+
+No corporate backing, no paid tier, no ads — just trying to make something great and give it away. Thank you. 🙏
 
 ## What it is
 
@@ -67,9 +83,27 @@ As you type, TabType shows a dimmed **ghost-text** prediction of what comes next
 | Screen / conversation context | ✅ AX tree + OCR | ✅ | ❌ |
 | Notarized / polished | ⚠️ alpha, unnotarized | ✅ | ✅ |
 
-**vs [Cotypist](https://cotypist.app/)** — the closest comparison and our north star. TabType matches its core: on-device models, screen/accessibility context, personalization, text mirroring, speculative "parked" generation, and word alternatives. Cotypist is more polished, notarized, and has a paid tier; TabType is **free, open-source, and account-free**. We're the open project working toward Cotypist-grade quality — [detailed comparison](docs/COMPARISON.md).
+**vs [Cotypist](https://cotypist.app/)** — the closest comparison and our north star. TabType matches its core: on-device models, screen/accessibility context, personalization, text mirroring, speculative "parked" generation, and word alternatives. Cotypist is more polished, notarized, and has a paid tier; TabType is **free, open-source, and account-free**. We're the open project working toward Cotypist-grade quality.
 
-**vs other indie/OSS attempts** — [Sombra](https://github.com/andlsac/Sombra) (llama.cpp + dictionary), [KeyType](https://github.com/johnbean393/KeyType) (constrained decoding), cotabby (focused-window OCR). TabType goes further with accessibility-tree transcript extraction, per-app extraction policies, KV-cache speculative parking, and baseline-probed / mirror rendering. Credit and thanks to all of them for showing what's possible.
+### vs the open-source alternatives
+
+There are a few other open-source macOS autocomplete projects — each great in its own way. Here's how TabType compares (and huge thanks to all of them for charting the path):
+
+| | **TabType** | **[Sombra](https://github.com/andlsac/Sombra)** | **[KeyType](https://github.com/johnbean393/KeyType)** | **cotabby** |
+|---|:---:|:---:|:---:|:---:|
+| Open source | ✅ MIT | ✅ | ✅ | ✅ |
+| Inference backend | MLX (Qwen3) | llama.cpp | on-device LLM | on-device LLM |
+| Context: screen OCR | ✅ | ✅ | — | ✅ focused window |
+| Context: accessibility-tree transcript | ✅ | — | — | — |
+| Remembers your recent messages / writing | ✅ | — | — | — |
+| Personal phrase memory + few-shot | ✅ | dictionary | — | — |
+| Speculative "parked" generation + KV cache | ✅ | — | — | — |
+| Word alternatives | ✅ | — | — | — |
+| Text mirroring / baseline-probed rendering | ✅ | — | — | — |
+| Per-app & per-domain policies | ✅ | per-app | — | — |
+| Apple Intelligence engine | ✅ | — | — | — |
+
+**Where each shines:** [Sombra](https://github.com/andlsac/Sombra) pairs llama.cpp with fast macOS-dictionary completions — a clean, lightweight approach. [KeyType](https://github.com/johnbean393/KeyType) explores constrained/grammar decoding for tightly-shaped output. cotabby pioneered focused-window OCR context. TabType's bet is **deeper context** (accessibility-tree transcripts, your recent messages, phrase memory) and **Cotypist-grade UX** (speculative parking, mirror rendering, per-app policies). See the [detailed comparison](docs/COMPARISON.md).
 
 ## 📦 Install
 

@@ -22,16 +22,15 @@ enum HardwareInfo {
     /// Silicon is shared with the GPU, so we leave generous headroom for the OS
     /// and other apps while still using a capable model.
     static var recommendedModelId: String {
-        // Tiers balance quality against autocomplete latency (measured on M-series):
-        // 3B ≈ 0.5s/suggestion, 7B ≈ 0.9s — instruct variants are the same parameter
-        // counts as the base models these figures were measured on. Instruct models are
-        // used by default so the local engine gets a real chat-template prompt (see
-        // Predictor.swift), matching Cotypist's own approach rather than raw
-        // base-model continuation.
+        // Tiers balance quality against autocomplete latency. Qwen3-4B-Instruct-2507
+        // is the default across capable Macs — a newer generation than Qwen2.5 with
+        // markedly better short-form continuation, non-thinking (never emits
+        // reasoning), ~2.3 GB, and fast enough for inline use. Smaller Macs fall
+        // back to lighter instruct models. Instruct variants get a real chat-template
+        // prompt (see Predictor.swift), matching Cotypist's approach.
         let ram = ramGB
         switch ram {
-        case 32...: return "mlx-community/Qwen2.5-7B-Instruct-4bit"
-        case 16...: return "mlx-community/Qwen2.5-3B-Instruct-4bit"
+        case 16...: return "mlx-community/Qwen3-4B-Instruct-2507-4bit"
         case 8...:  return "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
         default:    return "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
         }
