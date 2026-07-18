@@ -54,7 +54,9 @@ As you type, TabType shows a dimmed **ghost-text** prediction of what comes next
 - Instant dictionary + learned-phrase completions while the model works (zero latency)
 
 **Context awareness** — suggestions that actually fit what you're doing
-- Reads the document/conversation around your cursor — via the **accessibility tree** in chat apps (clean, no screenshots) or on-device screenshot OCR elsewhere
+- Reads the whole visible conversation in **15+ chat apps** (Slack, WhatsApp, Telegram, Signal, Teams, Discord…) **and chat websites** (claude.ai, ChatGPT, Gemini…) via the **accessibility tree** — clean, no screenshots — with screenshot OCR as the fallback elsewhere
+- **Document-aware long-form context**: in writing apps (Pages, Word, Notes, Ulysses…) it reads a large window around your cursor *plus* the document's opening lines, so mid-document suggestions stay on topic
+- **Per-app transparency**: Settings → Apps shows exactly what context recipe applies to every app (Chat / Document / Code editor badges + a plain-English summary) — and lets you change it per app
 - Remembers **your recent messages** in a conversation and **your previous writing** so it continues your train of thought
 - **Phrase memory** learns names, sign-offs, and jargon you type often
 

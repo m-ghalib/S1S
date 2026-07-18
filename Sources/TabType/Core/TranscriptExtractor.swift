@@ -20,13 +20,20 @@ enum TranscriptExtractor {
     nonisolated static func extract(windowElement: AXUIElement,
                                     excludingSubtreeOf excluded: AXUIElement?,
                                     budget: Int) -> String? {
-        let maxVisits = 800
-        let maxDepth = 14
+        // Web DOMs (browser chats) are far deeper and wider than native chat
+        // trees, so the bounds are generous; the char-based early exit below
+        // keeps native apps as cheap as before.
+        let maxVisits = 2500
+        let maxDepth = 25
         var visits = 0
+        var collectedChars = 0
         var queue: [(AXUIElement, Int)] = [(windowElement, 0)]
         var lines: [(text: String, y: CGFloat, x: CGFloat)] = []
 
-        while !queue.isEmpty, visits < maxVisits {
+        // 3× slack: BFS reaches rows roughly top-to-bottom, and `assemble` keeps
+        // the SUFFIX (newest messages) — exiting too early would cut the bottom
+        // of the conversation before the suffix-keep can prefer it.
+        while !queue.isEmpty, visits < maxVisits, collectedChars < budget * 3 {
             let (element, depth) = queue.removeFirst()
             visits += 1
             if let excluded, CFEqual(element, excluded) { continue }   // never echo the input field
@@ -36,6 +43,7 @@ enum TranscriptExtractor {
                    text.count >= 3,
                    let frame = AccessibilityBridge.elementFrame(of: element) {
                     lines.append((text, frame.minY, frame.minX))
+                    collectedChars += text.count
                 }
                 continue   // static text is a leaf for our purposes
             }

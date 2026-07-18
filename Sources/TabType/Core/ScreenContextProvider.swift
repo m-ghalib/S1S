@@ -17,6 +17,10 @@ final class ScreenContextProvider: ObservableObject {
         let app: String
         let bundleId: String
         let text: String
+        /// Website host at capture time (browsers only) — tabs share one bundle
+        /// id, so without this a previous site's text masquerades as the current
+        /// tab's context.
+        var host: String?
     }
 
     private(set) var history: [Entry] = []
@@ -32,6 +36,18 @@ final class ScreenContextProvider: ObservableObject {
     /// Logged once so a missing permission (which silently zeroes out screen context
     /// forever otherwise) is actually diagnosable instead of invisible.
     private var warnedNoPermission = false
+
+    /// Fired when a capture lands with genuinely NEW content (dedup'd against the
+    /// previous snapshot for the same app). The Engine uses it to regenerate a
+    /// visible suggestion against the fresh context — without this, a capture only
+    /// ever benefits the NEXT prediction.
+    var onFreshContext: ((_ bundleId: String) -> Void)?
+
+    /// Set by the Engine on every keystroke. Captures are frozen while the user is
+    /// mid-burst (<1s since the last edit): mid-burst snapshots are jittery AND
+    /// invalidate the KV cache exactly when latency matters most — capture on
+    /// pause/commit instead.
+    var lastEditAt = Date.distantPast
 
     private init() {}
 
@@ -57,6 +73,9 @@ final class ScreenContextProvider: ObservableObject {
             return
         }
         guard !capturing, Date().timeIntervalSince(lastCaptureStarted) > minInterval else { return }
+        // Mid-burst freeze: while the user is actively typing, snapshots jitter
+        // and thrash the KV cache — wait for the pause.
+        guard Date().timeIntervalSince(lastEditAt) > 1.0 else { return }
         capturing = true
         lastCaptureStarted = Date()
 
@@ -73,8 +92,15 @@ final class ScreenContextProvider: ObservableObject {
         let windowFrame = AccessibilityBridge.focusedWindowFrame()
         let cropMode = AppSettings.shared.screenCropMode
         // Chat apps: the conversation reads far cleaner from the AX tree than from
-        // pixels — try that first, OCR only as fallback.
-        let tryAXTranscript = AppPolicyStore.policy(forBundleId: frontBid).transcriptViaAX
+        // pixels — try that first, OCR only as fallback. Host-aware so web chats
+        // (claude.ai, ChatGPT…) get the transcript path inside a browser too.
+        let frontHost = AccessibilityBridge.frontmostURLHost()
+        let policy = AppPolicyStore.policy(forBundleId: frontBid, host: frontHost)
+        let tryAXTranscript = policy.transcriptViaAX
+        // Extract exactly what the prompt will use (plus nothing that would be
+        // clipped away later) — keeps the transcript budget and the prompt budget
+        // in lockstep.
+        let transcriptBudget = policy.screenContextCap ?? AppPolicyStore.defaultContextCap
         let windowBox = tryAXTranscript
             ? focused.flatMap { ContextReader.windowOf($0) }.map(AXElementBox.init) : nil
         let focusedBox = focused.map(AXElementBox.init)
@@ -83,11 +109,12 @@ final class ScreenContextProvider: ObservableObject {
             if let windowBox {
                 if let transcript = TranscriptExtractor.extract(
                     windowElement: windowBox.element,
-                    excludingSubtreeOf: focusedBox?.element, budget: 900),
+                    excludingSubtreeOf: focusedBox?.element, budget: transcriptBudget),
                    transcript.count >= 80 {
                     await MainActor.run {
                         self.capturing = false
-                        self.append(app: frontName, bundleId: frontBid, text: transcript, source: "ax transcript")
+                        self.append(app: frontName, bundleId: frontBid, text: transcript,
+                                    host: frontHost, source: "ax transcript")
                     }
                     return
                 }
@@ -97,7 +124,7 @@ final class ScreenContextProvider: ObservableObject {
             await MainActor.run {
                 self.capturing = false
                 if let (app, bid, text) = capture, text.count >= 12 {
-                    self.append(app: app, bundleId: bid, text: text)
+                    self.append(app: app, bundleId: bid, text: text, host: frontHost)
                 } else {
                     Log.shared.debug("screen memory: capture produced no usable text this round")
                 }
@@ -105,17 +132,30 @@ final class ScreenContextProvider: ObservableObject {
         }
     }
 
-    private func append(app: String, bundleId: String, text: String, source: String = "ocr") {
-        // Skip if unchanged from the last entry we stored for this app.
-        if let last = history.last(where: { $0.app == app }), last.text == text { return }
-        history.append(Entry(time: Date(), app: app, bundleId: bundleId, text: text))
+    private func append(app: String, bundleId: String, text: String,
+                        host: String? = nil, source: String = "ocr") {
+        // Normalize away chat-UI jitter (timestamps, presence, "(edited)") BEFORE
+        // storing — the stored snapshot must stay byte-identical between real
+        // messages or every capture invalidates the prompt's KV prefix.
+        let normalized = TranscriptNormalizer.normalize(text)
+        guard normalized.count >= 12 else { return }
+        // Meaningful-change gate: a real new message changes the (normalized)
+        // tail; scroll/timestamp jitter doesn't. Same tail + similar length ⇒
+        // keep the EXISTING snapshot so the prompt bytes don't move.
+        if let last = history.last(where: { $0.bundleId == bundleId && $0.host == host }),
+           !TranscriptNormalizer.isMeaningfulChange(old: last.text, new: normalized) {
+            return
+        }
+        history.append(Entry(time: Date(), app: app, bundleId: bundleId,
+                             text: normalized, host: host))
 
         let cutoff = Date().addingTimeInterval(-maxAge)
         history.removeAll { $0.time < cutoff }
         if history.count > maxEntries {
             history.removeFirst(history.count - maxEntries)
         }
-        Log.shared.debug("screen memory: +\(text.count) chars from \(app) (bid=\(bundleId), \(source)) (entries=\(history.count))")
+        Log.shared.debug("screen memory: +\(normalized.count) chars from \(app) (bid=\(bundleId)\(host.map { ", host=\($0)" } ?? ""), \(source)) (entries=\(history.count))")
+        onFreshContext?(bundleId)
     }
 
     /// The freshest OCR snapshot for a specific bundle ID, capped to `cap` characters.
@@ -123,14 +163,35 @@ final class ScreenContextProvider: ObservableObject {
     /// window are near-duplicates that would eat the whole budget — and staleness is
     /// enforced here too (append-time pruning alone lets an old entry linger while
     /// capture is paused).
-    func contextText(for bundleId: String?, cap: Int) -> String {
+    func contextText(for bundleId: String?, cap: Int, host: String? = nil) -> String {
         guard !history.isEmpty, let bundleId else { return "" }
         let cutoff = Date().addingTimeInterval(-maxAge)
-        let matching = history.filter { $0.bundleId == bundleId && $0.time >= cutoff }
-        Log.shared.debug("screen context requested for bid=\(bundleId), found \(matching.count) fresh entries out of \(history.count) total")
+        // Browsers share one bundle id across tabs — when a host is known, only
+        // same-host entries count as CURRENT context (a previous site's text is
+        // offered separately as previous-app background, never as current).
+        let matching = history.filter {
+            $0.bundleId == bundleId && $0.time >= cutoff
+                && (host == nil || $0.host == nil || $0.host == host)
+        }
+        Log.shared.debug("screen context requested for bid=\(bundleId)\(host.map { " host=\($0)" } ?? ""), found \(matching.count) fresh entries out of \(history.count) total")
         guard var text = matching.last?.text else { return "" }
         if text.count > cap { text = String(text.suffix(cap)) }
         return text
+    }
+
+    /// The freshest snippet from a DIFFERENT app (or a different site in the same
+    /// browser) within `maxAgeSecs` — labeled previous-app background for the
+    /// prompt, so it never masquerades as current context.
+    func previousAppSnippet(excludingBundleId bundleId: String?, host: String?,
+                            cap: Int = 250, maxAgeSecs: TimeInterval = 60) -> (app: String, text: String)? {
+        let cutoff = Date().addingTimeInterval(-maxAgeSecs)
+        let candidate = history.last {
+            $0.time >= cutoff && ($0.bundleId != bundleId
+                || (host != nil && $0.host != nil && $0.host != host))
+        }
+        guard let candidate else { return nil }
+        let name = candidate.host ?? candidate.app
+        return (name, String(candidate.text.suffix(cap)))
     }
 
     /// One-shot diagnostic: capture the frontmost window, OCR it, and log the result

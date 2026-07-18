@@ -22,16 +22,22 @@ enum ContextReader {
         var window: AXUIElement?
         /// Whether any typed input was present (avoid predicting on empty).
         var hasInput: Bool
+        /// The document's opening lines when the caret window didn't reach the
+        /// start (long-form apps) — empty otherwise.
+        var documentStart: String = ""
     }
 
     /// - fallbackBuffer: keystroke buffer used when AX text isn't available.
     /// - screenContext: remembered on-screen text (may be empty).
     /// - inputChars: cap on how much of the current input (before the caret) to send.
     /// - afterChars: cap on how much text after the caret to send, for fill-in-the-middle.
+    /// - wantsDocumentHead: long-form apps — also grab the document's first lines
+    ///   when the caret window is a mid-document slice (topic anchoring).
     static func gather(fallbackBuffer: String,
                        screenContext: String,
                        inputChars: Int,
-                       afterChars: Int = 300) -> Result {
+                       afterChars: Int = 300,
+                       wantsDocumentHead: Bool = false) -> Result {
         let focused = AccessibilityBridge.focusedElement()
         let window = focused.flatMap { windowOf($0) }
 
@@ -44,6 +50,17 @@ enum ContextReader {
             input = String(fallbackBuffer.suffix(inputChars))
         }
 
+        // Long-form: if the field holds more text than the caret window shows,
+        // the document's opening (title/intro) anchors what this is ABOUT.
+        var documentStart = ""
+        if wantsDocumentHead, let focused, input.count >= inputChars,
+           let full = AccessibilityBridge.stringValue(of: focused),
+           full.count > inputChars {
+            let head = String(full.prefix(300))
+            // Don't duplicate: only useful when the head isn't already inside the window.
+            if !input.hasPrefix(head) { documentStart = head }
+        }
+
         let afterCursor = focused.flatMap {
             AccessibilityBridge.textAfterCaret(of: $0, maxChars: afterChars)
         } ?? ""
@@ -52,7 +69,8 @@ enum ContextReader {
 
         return Result(dedupKey: dedupKey, input: input, afterCursor: afterCursor,
                       focused: focused, window: window,
-                      hasInput: !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                      hasInput: !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      documentStart: documentStart)
     }
 
     /// Frame of the window enclosing `element`, if resolvable.

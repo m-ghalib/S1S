@@ -68,6 +68,14 @@ final class Engine {
             recentInputs[bundleId] = list
         }
         buffer = ""   // the message left the field
+        // The sent message (and often a reply) is about to appear in the transcript —
+        // capture it sooner than the next natural refresh would.
+        let policy = AppPolicyStore.policy(forBundleId: bundleId)
+        if (settings.useScreenContext || policy.forceScreenContext) && policy.includesScreenContext {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                ScreenContextProvider.shared.refreshIfStale()
+            }
+        }
     }
     /// One-shot log flag for the chat-panels-only skip.
     private var loggedChatPanelSkip: Set<String> = []
@@ -116,6 +124,7 @@ final class Engine {
         wireCallbacks()
         guard monitor.start() else { return false }
         installDismissObservers()
+        installFreshContextRekick()
         // Whatever is on the pasteboard at launch predates this session — treat it
         // as stale so it never enters a prompt (only copies made from now on do).
         clipboardChangeCount = NSPasteboard.general.changeCount
@@ -126,6 +135,26 @@ final class Engine {
         }
         isRunning = true
         return true
+    }
+
+    /// When a screen capture lands with genuinely new content while a suggestion is
+    /// visible (or a prediction is imminent), regenerate against the fresh context —
+    /// otherwise a capture only ever benefits the NEXT prediction and suggestions
+    /// permanently run one conversation-turn behind.
+    private var lastFreshRekick = Date.distantPast
+    private func installFreshContextRekick() {
+        ScreenContextProvider.shared.onFreshContext = { [weak self] bundleId in
+            guard let self else { return }
+            guard Date().timeIntervalSince(self.lastFreshRekick) > 1.0 else { return }
+            guard bundleId == AccessibilityBridge.frontmostBundleId() ?? "" else { return }
+            // Only worth a regeneration when something is (about to be) on screen.
+            guard self.currentSuggestion != nil || !self.buffer.isEmpty else { return }
+            self.lastFreshRekick = Date()
+            self.lastPredictedPrompt = ""   // context changed — bypass the dedup skip
+            self.forceNextPrediction = true
+            Log.shared.debug("fresh screen context for \(bundleId) — re-kicking prediction")
+            self.schedulePrediction()
+        }
     }
 
     /// The keystroke tap only sees keydowns, so without these the ghost text
@@ -229,11 +258,70 @@ final class Engine {
                 self.lastPredictedPrompt = ""
                 self.parked = nil   // parked seeds never cross field boundaries
                 self.updateAccessoryButton()
-                let policy = AppPolicyStore.policy(forBundleId: AccessibilityBridge.frontmostBundleId())
+                // Host-aware: a browser tab on a chat site gets the chat treatment.
+                let policy = AppPolicyStore.policy(
+                    forBundleId: AccessibilityBridge.frontmostBundleId(),
+                    host: AccessibilityBridge.frontmostURLHost())
                 if (self.settings.useScreenContext || policy.forceScreenContext) && policy.includesScreenContext {
                     ScreenContextProvider.shared.refreshIfStale()
                 }
+                self.schedulePrewarm(policy: policy)
             }
+        }
+    }
+
+    // MARK: - Context prewarm
+
+    private var prewarmTask: Task<Void, Never>?
+    private var lastPrewarmKey: String?
+
+    /// Speculatively prefill the KV cache with the CURRENT app's context sections
+    /// (persona + previous writing + recent messages + clipboard + screen) shortly
+    /// after a focus change, so the user's first real pause pays only the
+    /// Input-tail prefill instead of the whole prompt. The 1-token result is
+    /// discarded; runs only when idle and skipped in Low Power Mode.
+    private func schedulePrewarm(policy: AppPolicy) {
+        guard settings.isEnabled, !PowerMonitor.shared.isLowPower else { return }
+        prewarmTask?.cancel()
+        prewarmTask = Task { [weak self] in
+            // Let the focus-change screen capture land first (throttle is 1.5s, a
+            // capture kicked just above typically completes well inside 0.8s).
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard let self, !Task.isCancelled else { return }
+            // Only when idle — never compete with a real prediction.
+            guard self.currentSuggestion == nil, self.buffer.isEmpty else { return }
+            let bid = AccessibilityBridge.frontmostBundleId()
+            let screenCap = policy.screenContextCap ?? AppPolicyStore.defaultContextCap
+            let screenEnabled = (self.settings.useScreenContext || policy.forceScreenContext)
+                && policy.includesScreenContext
+            let screen = screenEnabled
+                ? ScreenContextProvider.shared.contextText(for: bid, cap: screenCap) : ""
+            let key = (bid ?? "") + "|" + String(screen.hashValue)
+            guard key != self.lastPrewarmKey else { return }   // context unchanged
+            self.lastPrewarmKey = key
+            let personalExamples: [TypingHistoryStore.AcceptPair] =
+                (self.settings.collectTypingHistory && TypingHistoryStore.shared.acceptCount >= 5)
+                ? TypingHistoryStore.shared.recentAccepts(limit: 2) : []
+            let previousWriting: [String] = self.settings.collectTypingHistory
+                ? TypingHistoryStore.shared.contextSamples(budget: 350) : []
+            let recentMessages = bid.flatMap { self.recentInputs[$0] } ?? []
+            let persona = policy.customInstructions.isEmpty
+                ? self.settings.personaPreface
+                : self.settings.personaPreface + " " + policy.customInstructions
+            let req = CompletionRequest(
+                beforeCursor: "Hello", afterCursor: "",
+                screenContext: screen,
+                clipboard: self.settings.useClipboardContext ? self.freshClipboardText() : "",
+                persona: persona,
+                personalExamples: personalExamples,
+                previousWriting: previousWriting,
+                recentMessages: recentMessages,
+                speculative: true,
+                screenContextBudget: screenCap,
+                maxWords: 1, maxTokens: 1, temperature: 0.0)
+            let start = Date()
+            _ = await self.router.current.complete(req)
+            Log.shared.debug("context prewarm (\(bid ?? "?")) finished in \(Int(Date().timeIntervalSince(start) * 1000))ms")
         }
     }
 
@@ -491,6 +579,8 @@ final class Engine {
 
     private func handleEdit(chars: String, isDeletion: Bool) {
         lastKeystrokeAt = Date()
+        // Freeze screen captures while typing (see ScreenContextProvider).
+        ScreenContextProvider.shared.lastEditAt = lastKeystrokeAt
         // Track focus changes to reset the fallback buffer and enable enhanced
         // accessibility for Electron/Chromium apps (Slack, VS Code, browsers…).
         let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
@@ -792,13 +882,31 @@ final class Engine {
         "great question", "that's a great",
     ]
 
+    /// Openers that are fine mid-sentence but signal REPLY-drift when the author
+    /// just finished a sentence ("?"/"!" — exactly when the model is most tempted
+    /// to answer the conversation instead of continuing the author's text).
+    nonisolated private static let sentenceEndReplyPrefixes: [String] = [
+        "i'll ", "i will ", "i can ", "here's ", "here is ",
+        "you can ", "you should ", "we can ", "let me ",
+    ]
+
     /// Reject suggestions that read like an assistant reply rather than a continuation
     /// of the user's own text. Returns the suggestion unchanged, or nil to reject.
-    nonisolated static func stripAssistantSpeak(_ suggestion: String) -> String? {
+    /// `inputTail` (the typed text's end) gates the stricter check.
+    nonisolated static func stripAssistantSpeak(_ suggestion: String,
+                                                inputTail: String = "") -> String? {
         let trimmed = suggestion.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = trimmed.lowercased()
         for prefix in assistantSpeakPrefixes where lower.hasPrefix(prefix) {
             return nil
+        }
+        // After a finished sentence, reply-shaped openers are almost always the
+        // model answering the conversation, not the author's next sentence.
+        let tail = inputTail.trimmingCharacters(in: .whitespaces)
+        if let last = tail.last, last == "?" || last == "!" {
+            for prefix in sentenceEndReplyPrefixes where lower.hasPrefix(prefix) {
+                return nil
+            }
         }
         return suggestion
     }
@@ -947,14 +1055,22 @@ final class Engine {
         }
         _ = frontApp
         // One cap for both the fetch and the prompt budget so they can't diverge.
-        let screenCap = policy.screenContextCap ?? 500
+        // Host-aware: in browsers, only same-site entries count as current context.
+        let screenCap = policy.screenContextCap ?? AppPolicyStore.defaultContextCap
         var screenContext = screenContextEnabled
-            ? ScreenContextProvider.shared.contextText(for: bundleId, cap: screenCap) : ""
+            ? ScreenContextProvider.shared.contextText(for: bundleId, cap: screenCap, host: host) : ""
+        // Cross-app background: the previous app/site's freshest snippet, offered
+        // as an explicitly labeled section — useful ("replying about what I just
+        // read") without masquerading as the current topic.
+        let previousApp = screenContextEnabled
+            ? ScreenContextProvider.shared.previousAppSnippet(excludingBundleId: bundleId, host: host)
+            : nil
 
         let ctx = ContextReader.gather(
             fallbackBuffer: buffer,
             screenContext: screenContext,
-            inputChars: settings.contextChars)
+            inputChars: policy.inputContextChars ?? settings.contextChars,
+            wantsDocumentHead: policy.documentProfile)
 
         // Google Docs renders to canvas — AX text is unavailable until the user
         // enables its accessibility mode. Tell them ONCE how to fix it.
@@ -1066,6 +1182,10 @@ final class Engine {
             personalExamples: personalExamples,
             previousWriting: previousWriting,
             recentMessages: recentMessages,
+            documentStart: ctx.documentStart,
+            previousAppName: previousApp?.app ?? "",
+            previousAppContext: previousApp?.text ?? "",
+            screenIsConversation: policy.transcriptViaAX,
             speculative: speculative,
             screenContextBudget: screenCap,
             maxWords: (PowerMonitor.shared.isLowPower && settings.batteryShorterCompletions)
@@ -1075,7 +1195,7 @@ final class Engine {
         if !speculative { lastReq = req }   // word-alternatives regeneration basis
         Log.shared.debug("predict app=\(bundleId ?? "?") engine=\(engine.displayName) focused=\(ctx.focused != nil) screenCtx=\(screenContext.count) inputTail=\"\(String(ctx.input.suffix(40)))\"")
         if settings.verboseLog {
-            let fullPrompt = PromptBuilder.body(req, cap: 1500)
+            let fullPrompt = PromptBuilder.body(req, cap: PromptBuilder.defaultCap)
             Log.shared.debug("predict full prompt:\n---\n\(fullPrompt)\n---")
         }
         let startedAt = DispatchTime.now()
@@ -1134,7 +1254,7 @@ final class Engine {
             Log.shared.debug("predict -> (echo rejected) (\(elapsedMs)ms)")
             return
         }
-        guard let clean = Engine.stripAssistantSpeak(deEchoed) else {
+        guard let clean = Engine.stripAssistantSpeak(deEchoed, inputTail: String(ctxInput.suffix(10))) else {
             Log.shared.debug("predict -> (assistant-speak rejected) (\(elapsedMs)ms)")
             return
         }

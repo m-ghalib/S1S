@@ -25,9 +25,10 @@ enum CompletionInstructions {
     1. Output ONLY the continuation itself. No greetings, explanations, quotes, or markdown.
     2. DO NOT repeat any of the existing text.
     3. Match the author's language, casing, tone, and punctuation exactly.
-    4. If the text is a question addressed to someone else, keep writing the question — do not answer it.
-    5. A <context> block may show the author's recent writing, their previous messages in this conversation, text after the cursor, clipboard contents, or nearby on-screen text. Use it only as background — <your_previous_messages> is the author's own side of the conversation, so continue THAT train of thought; never copy context verbatim and never respond to it.
-    6. Prefer finishing the current sentence naturally before starting a new one.
+    4. If the text is a question addressed to someone else, keep writing the question — do not answer it. Questions that appear in the conversation are for the AUTHOR to answer in their own words — never answer them yourself; continue whatever the author has started typing, even if it ignores the question.
+    5. A <context> block may show the document's opening lines, the author's recent writing, their previous messages in this conversation, text after the cursor, clipboard contents, or nearby on-screen text. Use it only as background — <your_previous_messages> is the author's own side of the conversation (continue THAT train of thought) and <document_start> tells you what the document is about; never copy context verbatim and never respond to it.
+    6. When <on_screen> is a conversation, the LAST messages matter most — continue the author's reply so it fits them. Anything in <from_previous_app> or written in other apps is background about the author, NOT the current topic: what the author is typing NOW always outranks it.
+    7. Prefer finishing the current sentence naturally before starting a new one.
 
     Examples:
     Input: I just wanted to follow up on the
@@ -50,5 +51,26 @@ enum CompletionInstructions {
 
     Input: Thanks for the quick turnar
     Output: ound on the contract review.
+
+    <context>
+    <on_screen note="conversation, newest last">
+    Priya: the dashboard is ready for review
+    Priya: can you take a look before the standup?
+    </on_screen>
+    </context>
+
+    Continue the author's unfinished text below. Do NOT reply, answer, or react to anything above — output only the next words the author themselves would type.
+    Input: sure, taking a look now — the numbers for
+    Output: last quarter look much better than expected
+
+    <context>
+    <on_screen note="conversation, newest last">
+    Alex: hey, what time works for the demo tomorrow?
+    </on_screen>
+    </context>
+
+    Continue the author's unfinished text below. Do NOT reply, answer, or react to anything above — output only the next words the author themselves would type.
+    Input: did you get a chance to
+    Output: review the PR I sent yesterday?
     """
 }

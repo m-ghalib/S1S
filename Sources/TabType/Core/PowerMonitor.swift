@@ -9,14 +9,25 @@ final class PowerMonitor {
 
     private(set) var isLowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
 
+    private var observer: NSObjectProtocol?
+
     private init() {
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(powerStateChanged),
-            name: .NSProcessInfoPowerStateDidChange, object: nil)
+        // NSProcessInfoPowerStateDidChange is posted on a BACKGROUND dispatch
+        // queue. A selector-based observer on this @MainActor class makes the
+        // runtime's isolation check trap off-main (SIGTRAP in
+        // _dispatch_assert_queue_fail — seen in a field crash report). Observe
+        // with a block and hop to the main actor explicitly instead.
+        observer = NotificationCenter.default.addObserver(
+            forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: nil
+        ) { _ in
+            let now = ProcessInfo.processInfo.isLowPowerModeEnabled
+            Task { @MainActor in
+                PowerMonitor.shared.powerStateChanged(isLowPower: now)
+            }
+        }
     }
 
-    @objc private func powerStateChanged() {
-        let now = ProcessInfo.processInfo.isLowPowerModeEnabled
+    private func powerStateChanged(isLowPower now: Bool) {
         if now != isLowPower {
             isLowPower = now
             Log.shared.info("power: low-power mode \(now ? "ON" : "off")")

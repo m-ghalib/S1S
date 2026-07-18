@@ -3,6 +3,23 @@ import XCTest
 
 final class TrimmerAndTypoTests: XCTestCase {
 
+    func testReplyOpenersRejectedOnlyAfterFinishedSentence() {
+        // After "?" the author finished a sentence — "I'll check" is the model
+        // ANSWERING the conversation, not the author's continuation.
+        XCTAssertNil(Engine.stripAssistantSpeak("I'll check and get back to you",
+                                                inputTail: "call later today?"))
+        XCTAssertNil(Engine.stripAssistantSpeak("Let me know what you think",
+                                                inputTail: "amazing news!"))
+        // Mid-sentence, the same openers are legitimate continuations.
+        XCTAssertNotNil(Engine.stripAssistantSpeak("I'll be there by noon",
+                                                   inputTail: "and after that"))
+        XCTAssertNotNil(Engine.stripAssistantSpeak("we can ship on Friday",
+                                                   inputTail: "if the tests pass then"))
+        // The unconditional assistant-isms stay rejected regardless of tail.
+        XCTAssertNil(Engine.stripAssistantSpeak("As an AI, I cannot do that",
+                                                inputTail: "and after that"))
+    }
+
     // MARK: - SuggestionTrimmer terminator rule
 
     func testCutsAtRealSentenceEnd() {

@@ -21,6 +21,18 @@ struct CompletionRequest {
     /// The author's last few COMMITTED messages in this app (chat fields empty on
     /// send) — the freshest statement of intent; rendered just before the input.
     var recentMessages: [String] = []
+    /// The document's opening lines (long-form apps only, when the caret window
+    /// doesn't reach the start) — anchors the topic; rendered as
+    /// `<document_start>`, the most stable section in the prompt.
+    var documentStart: String = ""
+    /// Freshest snippet from the PREVIOUS app/site (≤60s old) — rendered as an
+    /// explicitly labeled `<from_previous_app>` block so cross-app context is
+    /// background, never mistaken for the current topic.
+    var previousAppName: String = ""
+    var previousAppContext: String = ""
+    /// Whether `screenContext` is a chat conversation (AX transcript) — adds a
+    /// "newest last" recency hint for the model.
+    var screenIsConversation: Bool = false
     /// Speculative request: generated mid-burst and PARKED for instant serving on
     /// the next pause; its result is never presented directly.
     var speculative: Bool = false

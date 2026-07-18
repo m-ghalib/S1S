@@ -96,7 +96,7 @@ final class Predictor {
     /// rather than dropped.
     func predict(request: CompletionRequest) async -> String? {
         guard provider.container != nil else { return nil }
-        let context = PromptBuilder.body(request, cap: 1500, chatFormat: !isBaseModel)
+        let context = PromptBuilder.body(request, cap: PromptBuilder.defaultCap, chatFormat: !isBaseModel)
         guard !context.isEmpty else { return nil }
 
         guard !isGenerating else {
@@ -168,7 +168,7 @@ final class Predictor {
             pendingRequest = nil
             Task { [weak self] in
                 guard let self else { return }
-                let pendingContext = PromptBuilder.body(pending, cap: 1500,
+                let pendingContext = PromptBuilder.body(pending, cap: PromptBuilder.defaultCap,
                                                         chatFormat: !self.isBaseModel)
                 guard !pendingContext.isEmpty else { return }
                 _ = await self.runGeneration(context: pendingContext, request: pending, isDirectCall: false)
@@ -223,6 +223,7 @@ final class Predictor {
         // (MLX streams can't be cancelled mid-flight) — never share KV state with it.
         let hasZombie = consecutiveTimeouts > 0
         let pc = promptCache
+        let verbose = AppSettings.shared.verboseLog
 
         return try? await container.perform { ctx -> String? in
             var params = GenerateParameters()
@@ -270,6 +271,10 @@ final class Predictor {
             }
 
             let suffix = Array(ids[common...])
+            if verbose {
+                Log.shared.debug("cache: reused \(common)/\(ids.count) tokens, prefilling \(suffix.count)")
+            }
+            let genStart = Date()
             let input = LMInput(tokens: MLXArray(suffix.map { Int32($0) }))
 
             // Custom TokenIterator so the StartGuard logit processor can veto bad
@@ -278,7 +283,10 @@ final class Predictor {
             // parameter-derived processor (repetition penalty) inside.
             var guardIds: [Int] = []
             if let eos = ctx.tokenizer.eosTokenId { guardIds.append(eos) }
-            for opener in ["Sorry", " Sorry"] {
+            // Unambiguous reply-openers only — "Yes"/"No"/"I" are legitimate
+            // continuations and must never be banned at the sampler.
+            for opener in ["Sorry", " Sorry", "Sure", " Sure", "Certainly", " Certainly",
+                           "Hello", " Hello", "Hi", " Hi"] {
                 if let first = ctx.tokenizer.encode(text: opener, addSpecialTokens: false).first {
                     guardIds.append(first)
                 }
@@ -291,6 +299,11 @@ final class Predictor {
                 maxTokens: params.maxTokens)
             let result = MLXLMCommon.generate(input: input, context: ctx, iterator: iterator) { (_: [Int]) in .more }
             let text = result.output
+            if verbose {
+                let genMs = Int(Date().timeIntervalSince(genStart) * 1000)
+                let outTokens = (pc.cache.first?.offset ?? 0) - ids.count
+                Log.shared.debug("gen: \(genMs)ms total (prefill \(suffix.count) + decode \(max(0, outTokens)) tokens)")
+            }
 
             // Trim the generated tokens back off so the cache holds exactly this
             // prompt — the next call's common prefix is then the whole shared prompt.

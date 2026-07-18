@@ -38,7 +38,7 @@ final class PhraseMemoryTests: XCTestCase {
         XCTAssertNil(m.continuation(after: "one"))
     }
 
-    func testRecentMessagesRenderedLastAndBudgetedHigh() {
+    func testRecentMessagesRenderedBeforeScreenAndChronological() {
         let req = CompletionRequest(
             beforeCursor: "and then I ", afterCursor: "", screenContext: "SCREENTEXT",
             clipboard: "", persona: "",
@@ -50,8 +50,9 @@ final class PhraseMemoryTests: XCTestCase {
               let input = body.range(of: "Input:") else {
             return XCTFail("missing sections in: \(body)")
         }
-        // Rendered closest to the input (after screen), chronological inside.
-        XCTAssertTrue(s.lowerBound < m.lowerBound && m.lowerBound < input.lowerBound)
+        // Volatility order: recentMessages (changes on send) render BEFORE screen
+        // (changes every capture) so screen updates don't invalidate their KV prefix.
+        XCTAssertTrue(m.lowerBound < s.lowerBound && s.lowerBound < input.lowerBound)
         let first = body.range(of: "ship the build")!.lowerBound
         let second = body.range(of: "tests are all green")!.lowerBound
         XCTAssertTrue(first < second)

@@ -34,7 +34,7 @@ final class FoundationModelEngine: SuggestionEngine {
             Log.shared.info("model instructions (Apple Intelligence system message):\n---\n\(CompletionInstructions.system)\n---")
         }
 
-        let body = PromptBuilder.body(request, cap: 1500, chatFormat: true)
+        let body = PromptBuilder.body(request, cap: PromptBuilder.defaultCap, chatFormat: true)
         guard !body.isEmpty else { return nil }
 
         // Fresh session per call: no transcript carry-over between independent

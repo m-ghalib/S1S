@@ -390,6 +390,7 @@ struct AppsSettingsView: View {
                                     Image(systemName: "slider.horizontal.3")
                                         .font(.caption2).foregroundStyle(Color.accentColor)
                                 }
+                                ProfileBadge(profile: AppPolicyStore.policy(forBundleId: app.id).profile)
                             }
                             .tag(app.id)
                         }
@@ -443,6 +444,32 @@ struct AppsSettingsView: View {
     }
 }
 
+/// Small colored tag showing the app's effective context profile — makes the
+/// per-app behavior visible at a glance instead of buried in code.
+private struct ProfileBadge: View {
+    let profile: AppPolicy.Profile
+
+    private var color: Color {
+        switch profile {
+        case .chat: return .blue
+        case .document: return .purple
+        case .codeEditor: return .orange
+        case .disabled: return .gray
+        case .standard: return .secondary.opacity(0.6)
+        }
+    }
+
+    var body: some View {
+        if profile != .standard {
+            Text(profile.rawValue)
+                .font(.caption2).fontWeight(.medium)
+                .padding(.horizontal, 5).padding(.vertical, 1)
+                .background(color.opacity(0.18), in: Capsule())
+                .foregroundStyle(color)
+        }
+    }
+}
+
 /// Tri-state: nil = "Default", true = "On", false = "Off".
 private struct TriStatePicker: View {
     let title: String
@@ -467,6 +494,10 @@ private struct AppOverrideDetail: View {
     let app: AppsSettingsView.RunningApp
     @Binding var override: AppOverride
 
+    /// The RESOLVED policy (built-ins + this override) — the card below always
+    /// tells the truth, including the effect of edits made right here.
+    private var resolved: AppPolicy { AppPolicyStore.policy(forBundleId: app.id) }
+
     var body: some View {
         Form {
             Section {
@@ -478,7 +509,38 @@ private struct AppOverrideDetail: View {
                         Text(app.name).font(.title3).bold()
                         Text(app.id).font(.caption).foregroundStyle(.secondary)
                     }
+                    Spacer()
+                    ProfileBadge(profile: resolved.profile)
                 }
+            }
+            Section("How TabType works here") {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(resolved.summaryLines, id: \.self) { line in
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("•").foregroundStyle(.secondary)
+                            Text(line).font(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            Section("Context") {
+                TriStatePicker(title: "Read conversation (accessibility)",
+                               value: $override.readConversation)
+                Text("Reads the visible conversation via the accessibility tree and keeps context always on — the treatment chat apps get. Turn on for any messaging-like app TabType doesn't recognize.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Picker("Context size", selection: Binding(
+                    get: { override.contextSize ?? "default" },
+                    set: { override.contextSize = $0 == "default" ? nil : $0 }
+                )) {
+                    Text("Default (\(AppPolicyStore.builtinContextCap(forBundleId: app.id).formatted()) characters)")
+                        .tag("default")
+                    Text("Small (\(300.formatted()) characters)").tag("small")
+                    Text("Large (\(AppPolicyStore.chatContextCap.formatted()) characters)").tag("large")
+                }
+                Text("How much surrounding text (conversation/screen) is given to the model in this app.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Completions") {
                 TriStatePicker(title: "Enable completions", value: $override.enabled)
@@ -523,6 +585,22 @@ private struct DomainsPane: View {
             Section {
                 Text("Suggestions are disabled on these domains (and subdomains) in browsers.")
                     .font(.callout).foregroundStyle(.secondary)
+            }
+            Section("Built-in chat websites") {
+                Text("On these sites, TabType reads the visible conversation via the accessibility tree (like a chat app) so suggestions follow the discussion. Add a rule below to disable a site instead.")
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(Array(AppPolicyStore.chatDomains).sorted(), id: \.self) { domain in
+                    HStack {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                            .foregroundStyle(.blue)
+                        Text(domain)
+                        Spacer()
+                        Text("Chat").font(.caption2).fontWeight(.medium)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(Color.blue.opacity(0.18), in: Capsule())
+                            .foregroundStyle(.blue)
+                    }
+                }
             }
             Section("Disabled websites") {
                 HStack {
@@ -633,7 +711,7 @@ struct AdvancedSettingsView: View {
                     Text("Context window")
                     Slider(value: Binding(
                         get: { Double(settings.contextChars) },
-                        set: { settings.contextChars = Int($0) }), in: 100...1300, step: 50)
+                        set: { settings.contextChars = Int($0) }), in: 100...2400, step: 50)
                     Text("\(settings.contextChars)").monospacedDigit()
                         .foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
                 }

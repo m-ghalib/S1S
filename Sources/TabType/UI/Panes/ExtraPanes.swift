@@ -12,6 +12,8 @@ struct ContextPane: View {
                 Toggle("Read on-screen context", isOn: $settings.useScreenContext)
                 Text("Reads the conversation or document around your cursor — via the accessibility tree in chat apps, or an on-device screenshot elsewhere — so suggestions match what you're working on. Chat apps like Slack and Claude always use this.")
                     .font(.caption).foregroundStyle(.secondary)
+                Text("TabType picks a context recipe per app: the conversation in chat apps and chat websites (accessibility tree, no screenshots), your document in writing apps, and nearby on-screen text elsewhere. Open the Apps section to see exactly what applies to each app — and to change it.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Picker("Screenshot extraction mode", selection: $settings.screenCropMode) {
                     ForEach(AppSettings.ScreenCropMode.allCases, id: \.self) { mode in
                         Text(mode.rawValue).tag(mode)

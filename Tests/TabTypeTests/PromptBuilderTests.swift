@@ -23,7 +23,9 @@ final class PromptBuilderTests: XCTestCase {
         }
     }
 
-    func testSectionOrderAfterThenClipboardThenScreen() {
+    func testSectionOrderIsByVolatilityForKVReuse() {
+        // Stable → volatile: clipboard → afterCursor → screen, so a screen-context
+        // change invalidates the smallest possible KV-cache suffix.
         let req = makeRequest(before: "Hello wor", after: "AFTERTEXT",
                               screen: "SCREENTEXT", clipboard: "CLIPTEXT")
         let body = PromptBuilder.body(req, cap: 1500)
@@ -32,8 +34,26 @@ final class PromptBuilderTests: XCTestCase {
               let s = body.range(of: "<on_screen>") else {
             return XCTFail("missing context sections in: \(body)")
         }
-        XCTAssertLessThan(a.lowerBound, c.lowerBound)
-        XCTAssertLessThan(c.lowerBound, s.lowerBound)
+        XCTAssertLessThan(c.lowerBound, a.lowerBound)
+        XCTAssertLessThan(a.lowerBound, s.lowerBound)
+    }
+
+    func testScreenChangeKeepsSharedPromptPrefix() {
+        // Two builds where ONLY the screen context differs must share an identical
+        // character prefix right up to <on_screen> — the KV-cache reuse guarantee.
+        var req1 = makeRequest(before: "Hello wor", after: "AFTERTEXT",
+                               screen: "SCREEN ONE", clipboard: "CLIPTEXT")
+        req1.recentMessages = ["earlier message"]
+        var req2 = req1
+        req2.screenContext = "SCREEN TWO ENTIRELY DIFFERENT"
+        let b1 = PromptBuilder.body(req1, cap: 1500)
+        let b2 = PromptBuilder.body(req2, cap: 1500)
+        guard let cut1 = b1.range(of: "<on_screen>"),
+              let cut2 = b2.range(of: "<on_screen>") else {
+            return XCTFail("missing on_screen section")
+        }
+        XCTAssertEqual(String(b1[..<cut1.lowerBound]), String(b2[..<cut2.lowerBound]),
+                       "everything before <on_screen> must be byte-identical for KV reuse")
     }
 
     func testPrefixAlwaysWinsBudget() {
@@ -50,6 +70,24 @@ final class PromptBuilderTests: XCTestCase {
         XCTAssertTrue(chat.hasSuffix("Input: Hello wor\nOutput:"))
     }
 
+    func testContinuationReminderPresentOnlyWithContext() {
+        let reminder = "Do NOT reply, answer, or react"
+        // No context → no reminder (keeps bare prompts minimal).
+        let bare = PromptBuilder.body(makeRequest(before: "Hello wor"), cap: 1500)
+        XCTAssertFalse(bare.contains(reminder))
+        // With context → reminder sits between </context> and Input:.
+        let withCtx = PromptBuilder.body(
+            makeRequest(before: "Hello wor", screen: "a: hi there friend"), cap: 1500)
+        XCTAssertTrue(withCtx.contains(reminder))
+        guard let end = withCtx.range(of: "</context>"),
+              let rem = withCtx.range(of: reminder),
+              let input = withCtx.range(of: "Input:") else {
+            return XCTFail("missing pieces in: \(withCtx)")
+        }
+        XCTAssertLessThan(end.lowerBound, rem.lowerBound)
+        XCTAssertLessThan(rem.lowerBound, input.lowerBound)
+    }
+
     func testBaseFormatIsPlainContinuation() {
         let req = makeRequest(before: "Hello wor", after: "AFTERTEXT")
         let base = PromptBuilder.body(req, cap: 1500, chatFormat: false)
@@ -64,6 +102,56 @@ final class PromptBuilderTests: XCTestCase {
         XCTAssertTrue(base.hasSuffix("Hello world "), "trailing space is signal for raw continuation")
         let chat = PromptBuilder.body(req, cap: 1500, chatFormat: true)
         XCTAssertTrue(chat.hasSuffix("Input: Hello world\nOutput:"), "chat format trims it")
+    }
+
+    func testDocumentStartRendersFirstInContext() {
+        var req = makeRequest(before: "deep in the document I write", after: "",
+                              screen: "SCREENTEXT", clipboard: "CLIPTEXT")
+        req.documentStart = "Quarterly Planning 2026 — Draft\nThis document lays out our goals"
+        req.previousWriting = ["some earlier writing sample"]
+        let body = PromptBuilder.body(req, cap: PromptBuilder.defaultCap)
+        guard let d = body.range(of: "<document_start>"),
+              let w = body.range(of: "<recently_written_by_author>"),
+              let s = body.range(of: "<on_screen>") else {
+            return XCTFail("missing sections in: \(body)")
+        }
+        XCTAssertLessThan(d.lowerBound, w.lowerBound)
+        XCTAssertLessThan(w.lowerBound, s.lowerBound)
+        XCTAssertTrue(body.contains("Quarterly Planning 2026"))
+    }
+
+    func testPreviousAppContextIsLabeledAndPlacedBeforeRecentMessages() {
+        var req = makeRequest(before: "writing something new here", screen: "CURRENT SCREEN")
+        req.previousAppName = "Slack"
+        req.previousAppContext = "earlier slack discussion about the launch"
+        req.recentMessages = ["my last sent message"]
+        let body = PromptBuilder.body(req, cap: PromptBuilder.defaultCap)
+        guard let prev = body.range(of: "<from_previous_app name=\"Slack\">"),
+              let msgs = body.range(of: "<your_previous_messages>"),
+              let scr = body.range(of: "<on_screen") else {
+            return XCTFail("missing sections in: \(body)")
+        }
+        XCTAssertLessThan(prev.lowerBound, msgs.lowerBound)
+        XCTAssertLessThan(msgs.lowerBound, scr.lowerBound)
+        XCTAssertTrue(body.contains("earlier slack discussion"))
+    }
+
+    func testScreenDropsLinesDuplicatingOwnMessages() {
+        var req = makeRequest(before: "and following up, I think",
+                              screen: "someone else: sounds good\nthe deploy finished and all services are green")
+        req.recentMessages = ["the deploy finished and all services are green"]
+        let body = PromptBuilder.body(req, cap: PromptBuilder.defaultCap)
+        let screenPart = body.components(separatedBy: "<on_screen").last ?? ""
+        XCTAssertTrue(screenPart.contains("sounds good"))
+        XCTAssertEqual(screenPart.components(separatedBy: "deploy finished").count - 1, 0,
+                       "own message must not be duplicated inside <on_screen>")
+    }
+
+    func testConversationHintOnTranscripts() {
+        var req = makeRequest(before: "hey, about that", screen: "a: hi\nb: hello there friend")
+        req.screenIsConversation = true
+        let body = PromptBuilder.body(req, cap: PromptBuilder.defaultCap)
+        XCTAssertTrue(body.contains("<on_screen note=\"conversation, newest last\">"))
     }
 
     func testScreenContextRespectsItsOwnBudget() {
