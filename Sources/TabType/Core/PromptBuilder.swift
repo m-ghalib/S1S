@@ -23,11 +23,16 @@ import Foundation
 /// (every capture in chat apps) then re-prefills only `<on_screen>` + the Input
 /// tail instead of the whole context block.
 enum PromptBuilder {
-    /// The one prompt-size ceiling every engine uses (chars). ~800 tokens of
-    /// context headroom on top of the typed prefix — Qwen3-class models handle
-    /// this comfortably, and the volatility-ordered layout means the extra
-    /// chars only cost prefill when a section actually changes.
-    static let defaultCap = 2600
+    /// The one prompt-size ceiling every engine uses (chars). ~6000 chars ≈ 1.7k
+    /// tokens — well inside Qwen3-class context windows, and enough that the
+    /// context sections (screen transcript, document start, previous writing…)
+    /// actually receive their advertised budgets instead of starving behind the
+    /// typed prefix (at the old 2600, chat apps had ~1100 chars left for ALL
+    /// context combined and the 1400-char chat screen budget was unreachable).
+    /// The volatility-ordered layout below means the extra chars only cost
+    /// prefill when a section actually changes; a full cache miss (app/model
+    /// switch) is a one-time ~1-4s prefill on M1-M4 class hardware.
+    static let defaultCap = 6000
     /// Room reserved out of `cap` for persona, tags, and scaffolding overhead.
     private static let reserve = 200
     /// The anti-reply-drift line rendered adjacent to Input whenever a context

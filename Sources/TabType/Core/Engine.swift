@@ -55,11 +55,23 @@ final class Engine {
     /// per app (chat fields empty on every send, so without this the model never
     /// sees what the user has been saying). In-memory only.
     private var recentInputs: [String: [String]] = [:]
+    /// The last AX-read field text per app — the reliable source for committed
+    /// messages. The keystroke fallback `buffer` is lossy (missed keystrokes,
+    /// send-by-click boundaries) and used to glue messages together mid-word.
+    private var lastAXInput: (bundleId: String, text: String)?
 
-    /// Snapshot the buffer as a committed message (Return pressed / field cleared).
+    /// Snapshot the just-sent message (Return pressed / field cleared). Prefers
+    /// the last AX snapshot of the field over the keystroke buffer.
     private func commitRecentInput(bundleId: String?) {
         guard let bundleId else { return }
-        let text = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        var text = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let ax = lastAXInput, ax.bundleId == bundleId {
+            let axText = ax.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            // The AX snapshot wins unless the buffer strictly extends it (a few
+            // final keystrokes typed after the last prediction cycle).
+            if !axText.isEmpty, !text.hasPrefix(axText) { text = axText }
+        }
+        lastAXInput = nil
         guard text.count >= 4 else { return }
         var list = recentInputs[bundleId] ?? []
         if list.last != text {
@@ -857,11 +869,12 @@ final class Engine {
         // Pure echo: the suggestion is (part of) the end of what was typed.
         if tailLower.hasSuffix(sugLower) || sugLower == tailLower { return nil }
         // Mid-prefix echo: the whole suggestion already appears in the recent text
-        // ("testing how fast the autocomplete" → "how fast the"). Only for
-        // multi-word / long suggestions — repeating a single short word ("the",
-        // a name) is often a legitimate continuation.
+        // ("testing how fast the autocomplete" → "how fast the"). Only for LONG
+        // suggestions — re-using a short phrase from two sentences ago ("sounds
+        // good", "the proposal") is normal writing, not an echo; the pure-echo
+        // suffix check above already catches actual repetition at the caret.
         let echoWords = sugLower.split(separator: " ").count
-        if echoWords >= 2 || sugLower.count >= 12, tailLower.contains(sugLower) { return nil }
+        if echoWords >= 4 || sugLower.count >= 30, tailLower.contains(sugLower) { return nil }
         // Overlap: suggestion starts by repeating the tail's last words → strip it.
         if sugLower.hasPrefix(tailLower), sug.count > tail.count {
             let stripped = String(sug.dropFirst(tail.count))
@@ -874,20 +887,24 @@ final class Engine {
     /// user's text (assistant-persona drift). Checked case-insensitively against the
     /// start of the (trimmed) suggestion.
     nonisolated private static let assistantSpeakPrefixes: [String] = [
-        "i'm sorry", "i am sorry", "i apologize", "i understand", "i see that",
-        "sure,", "sure!", "sure.", "of course,", "certainly,",
-        "yes,", "yes.", "no,", "no.",
+        "i'm sorry", "i am sorry", "i apologize",
         "as an ai", "as a language model",
-        "unfortunately", "thanks for", "thank you for",
         "great question", "that's a great",
     ]
 
     /// Openers that are fine mid-sentence but signal REPLY-drift when the author
     /// just finished a sentence ("?"/"!" — exactly when the model is most tempted
     /// to answer the conversation instead of continuing the author's text).
+    /// "Yes,"/"No,"/"Sure," live here rather than in the unconditional list: in a
+    /// chat the author's OWN reply very often starts exactly that way, and hard-
+    /// rejecting those deleted the highest-value chat suggestions.
     nonisolated private static let sentenceEndReplyPrefixes: [String] = [
         "i'll ", "i will ", "i can ", "here's ", "here is ",
         "you can ", "you should ", "we can ", "let me ",
+        "sure,", "sure!", "sure.", "of course,", "certainly,",
+        "yes,", "yes.", "no,", "no.",
+        "i understand", "i see that",
+        "unfortunately", "thanks for", "thank you for",
     ]
 
     /// Reject suggestions that read like an assistant reply rather than a continuation
@@ -929,7 +946,8 @@ final class Engine {
     /// the model is explicitly instructed to do when it ends mid-word); if that's
     /// implausible, reinterprets the fragment as a new word (space inserted) instead of
     /// just discarding it; only rejects if neither reading is plausible.
-    private func reconcileMidWord(_ suggestion: String, prefix: String, elapsedMs: UInt64) async -> String? {
+    private func reconcileMidWord(_ suggestion: String, prefix: String, req: CompletionRequest,
+                                  elapsedMs: UInt64) async -> String? {
         let noLeadingSpace = suggestion.hasPrefix(" ") ? String(suggestion.dropFirst()) : suggestion
         guard !noLeadingSpace.isEmpty else { return nil }
 
@@ -949,10 +967,25 @@ final class Engine {
             return noLeadingSpace   // direct append — completes the current word
         }
 
+        // Names and jargon are never in the dictionary, but they're almost always
+        // already visible somewhere — on screen, in the conversation, or earlier in
+        // the author's own text. If the joined word appears in any of those, accept
+        // the same-word reading instead of discarding a correct completion.
+        let joined = (partial + fragment).lowercased()
+        if !partial.isEmpty, joined.count >= 3 {
+            let seenInContext = req.screenContext.lowercased().contains(joined)
+                || req.recentMessages.contains(where: { $0.lowercased().contains(joined) })
+                || prefix.dropLast(partial.count).lowercased().contains(joined)
+            if seenInContext {
+                return noLeadingSpace
+            }
+        }
+
         let newWordPlausible = await SpellChecker.shared.isPlausibleContinuation(
             partial: "", fragment: fragment, language: settings.autocorrectLanguage)
         guard newWordPlausible else {
             Log.shared.debug("predict -> (mid-word implausible: \(partial)+\(fragment)) (\(elapsedMs)ms)")
+            Statistics.shared.record(.rejectedMidWordImplausible)
             return nil
         }
         return " " + noLeadingSpace
@@ -1089,12 +1122,15 @@ final class Engine {
 
         guard ctx.hasInput, forceNextPrediction || Engine.shouldPredict(ctx.input) else { return }
 
-        // With only a few chars typed, a small model latches onto whatever context
-        // it sees — drop screen noise until there's real signal to continue. Chat
-        // apps keep it: the conversation IS the signal there.
+        // A truly empty line gives a small model nothing to anchor on, so it can
+        // latch onto screen noise — but the old threshold (12 chars) blinded the
+        // first words of EVERY message and toggled the <on_screen> section in and
+        // out of the prompt, invalidating the prewarmed KV prefix exactly when
+        // latency matters most. Reply-drift on short prefixes is already handled
+        // by the continuation reminder, StartGuard, and stripAssistantSpeak.
         if !policy.forceScreenContext {
             let currentLine = ctx.input.split(separator: "\n", omittingEmptySubsequences: false).last ?? ""
-            if currentLine.trimmingCharacters(in: .whitespaces).count < 12 { screenContext = "" }
+            if currentLine.trimmingCharacters(in: .whitespaces).count < 3 { screenContext = "" }
         }
 
         // Require an actual focused element — like Cotypist, never suggest when
@@ -1153,6 +1189,10 @@ final class Engine {
             }
         }
 
+        // Remember the field's AX text — commitRecentInput reads this when the
+        // message is sent (the keystroke buffer alone is lossy).
+        if let bid = bundleId, !ctx.input.isEmpty { lastAXInput = (bid, ctx.input) }
+
         // Skip redundant work if nothing changed since the last prediction.
         if !speculative {
             if ctx.dedupKey == lastPredictedPrompt { return }
@@ -1203,14 +1243,20 @@ final class Engine {
         Task { [weak self] in
             guard let self else { return }
             // Completing a misspelling is never what the user wants — skip the whole
-            // generation while the word before the caret looks like a typo (opt-out
-            // via Settings ▸ Text Tools).
+            // generation when the last COMPLETED word looks like a typo (opt-out via
+            // Settings ▸ Text Tools). Mid-word partials are exempt: a half-typed rare
+            // name ("Nil…") is indistinguishable from a typo to the dictionary, and
+            // gating on it suppressed generation for exactly the words the model is
+            // best placed to finish from context.
             if self.settings.skipOnTypo, let (token, isPartial) = Engine.typoCheckToken(ctx.input),
+               !isPartial,
                await SpellChecker.shared.isLikelyTypo(
                    word: token, isPartial: isPartial, language: self.settings.autocorrectLanguage) {
                 Log.shared.debug("predict -> (typo before caret, skipped: \"\(token)\")")
+                Statistics.shared.record(.gatedTypo)
                 return
             }
+            Statistics.shared.record(.requested)
             let raw = await engine.complete(req)
             await self.handlePredictionResult(
                 raw: raw, req: req, ctxInput: ctx.input, policy: policy, startedAt: startedAt)
@@ -1243,6 +1289,9 @@ final class Engine {
         if settings.verboseLog {
             Log.shared.debug("predict raw model output (pre-post-processing): \(raw.map { "\"\($0)\"" } ?? "nil")")
         }
+        // nil here is usually NOT an empty generation — busy-coalesced and
+        // superseded requests also return nil (and are retried/late-delivered);
+        // the Predictor records the accurate funnel event for each case.
         guard let raw, !raw.isEmpty else {
             Log.shared.debug("predict -> (no suggestion) (\(elapsedMs)ms)")
             return
@@ -1252,10 +1301,12 @@ final class Engine {
         // accepting never merges into the prefix.
         guard let deEchoed = Engine.stripEcho(raw, prefix: ctxInput) else {
             Log.shared.debug("predict -> (echo rejected) (\(elapsedMs)ms)")
+            Statistics.shared.record(.rejectedEcho)
             return
         }
         guard let clean = Engine.stripAssistantSpeak(deEchoed, inputTail: String(ctxInput.suffix(10))) else {
             Log.shared.debug("predict -> (assistant-speak rejected) (\(elapsedMs)ms)")
+            Statistics.shared.record(.rejectedAssistantSpeak)
             return
         }
         var suggestion = Engine.reconcile(clean, prefix: ctxInput)
@@ -1266,6 +1317,7 @@ final class Engine {
         suggestion = Engine.trimSuffixOverlap(suggestion, afterCursor: req.afterCursor)
         guard !suggestion.isEmpty else {
             Log.shared.debug("predict -> (entirely duplicated after-cursor text) (\(elapsedMs)ms)")
+            Statistics.shared.record(.rejectedSuffixOverlap)
             return
         }
 
@@ -1275,6 +1327,7 @@ final class Engine {
         if let accepted = lastAcceptedText, Date().timeIntervalSince(lastAcceptedAt) < 3,
            suggestion.trimmingCharacters(in: .whitespaces) == accepted.trimmingCharacters(in: .whitespaces) {
             Log.shared.debug("predict -> (repeat of accepted text rejected) (\(elapsedMs)ms)")
+            Statistics.shared.record(.rejectedRepeatAccepted)
             return
         }
 
@@ -1282,7 +1335,7 @@ final class Engine {
         // resolve it via the plausibility dictionary rather than always forcing a
         // space, which used to destroy correct mid-word completions like "the"+"n".
         if let lastWord = ctxInput.last, lastWord.isLetter || lastWord.isNumber {
-            guard let resolved = await reconcileMidWord(suggestion, prefix: ctxInput, elapsedMs: elapsedMs) else {
+            guard let resolved = await reconcileMidWord(suggestion, prefix: ctxInput, req: req, elapsedMs: elapsedMs) else {
                 return
             }
             suggestion = resolved
@@ -1303,6 +1356,7 @@ final class Engine {
                                          inputChars: settings.contextChars)
         guard fresh.input == ctxInput else {
             Log.shared.debug("predict -> (input changed during generation, discarded) (\(elapsedMs)ms)")
+            Statistics.shared.record(.discardedStale)
             // Re-kick for the CURRENT input — without this, a burst whose requests
             // were all stale ends with the model idle and no suggestion ever shown.
             schedulePrediction()
@@ -1330,6 +1384,7 @@ final class Engine {
         // generated for an older snapshot is their whole point.
         guard req.speculative || ctx.input == req.beforeCursor else {
             Log.shared.debug("predict -> (late suggestion stale, discarded)")
+            Statistics.shared.record(.discardedStale)
             schedulePrediction()   // regenerate for the input as it is NOW
             return
         }
@@ -1449,7 +1504,15 @@ final class Engine {
                     occupied = await checkOccupied(target)
                     guard self.currentSuggestion == suggestion else { return }
                     if occupied == true {
-                        Log.shared.debug("placement: strip still occupied — dropped this cycle")
+                        // Never paint a ghost over real pixels — but a generated,
+                        // filtered, fresh suggestion should not die silently either
+                        // (dark Electron input bars sit right at the contrast
+                        // threshold and used to eat every suggestion this way).
+                        // The HUD pill is anchored to the window, not the caret,
+                        // so it can't overlap the text.
+                        Log.shared.debug("placement: strip still occupied — showing HUD pill instead")
+                        Statistics.shared.record(.occupiedFallback)
+                        self.overlay.showHUD(text: suggestion, windowRect: windowRect)
                         return
                     }
                 }

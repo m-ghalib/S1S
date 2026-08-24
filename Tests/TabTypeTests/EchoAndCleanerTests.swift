@@ -6,9 +6,17 @@ final class EchoAndCleanerTests: XCTestCase {
     // MARK: - stripEcho
 
     func testMidPrefixEchoRejected() {
-        // The live-log repro: model echoed the middle of the typed text.
-        XCTAssertNil(Engine.stripEcho("how fast the",
-                                      prefix: "testing how fast the autocomplete"))
+        // A long echo of the middle of the typed text is still rejected (≥4 words).
+        XCTAssertNil(Engine.stripEcho("how fast the autocomplete engine",
+                                      prefix: "testing how fast the autocomplete engine works"))
+    }
+
+    func testShortMidPrefixRepeatSurvives() {
+        // Re-using a short phrase from earlier text is normal writing, not an echo
+        // ("sounds good" said twice in one chat) — only the caret-adjacent suffix
+        // check treats short repeats as echoes.
+        XCTAssertNotNil(Engine.stripEcho("how fast the",
+                                         prefix: "testing how fast the autocomplete"))
     }
 
     func testSingleShortWordRepeatSurvives() {

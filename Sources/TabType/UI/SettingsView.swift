@@ -263,7 +263,7 @@ struct ModelSettingsView: View {
                 LabeledContent("Model files") {
                     Button("Reveal in Finder") {
                         NSWorkspace.shared.activateFileViewerSelecting(
-                            [ModelStorage.cacheDir(for: settings.modelId)])
+                            [ModelStorage.revealDir(for: settings.modelId)])
                     }
                 }
             }

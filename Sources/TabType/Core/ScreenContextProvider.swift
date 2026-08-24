@@ -104,12 +104,17 @@ final class ScreenContextProvider: ObservableObject {
         let windowBox = tryAXTranscript
             ? focused.flatMap { ContextReader.windowOf($0) }.map(AXElementBox.init) : nil
         let focusedBox = focused.map(AXElementBox.init)
+        // The input field's frame anchors the conversation column — the transcript
+        // walk keeps only text in that column, so sidebars (session/contact lists)
+        // stop masquerading as the conversation.
+        let columnFrame = focused.flatMap { AccessibilityBridge.elementFrame(of: $0) }
 
         Task.detached(priority: .utility) {
             if let windowBox {
                 if let transcript = TranscriptExtractor.extract(
                     windowElement: windowBox.element,
-                    excludingSubtreeOf: focusedBox?.element, budget: transcriptBudget),
+                    excludingSubtreeOf: focusedBox?.element,
+                    columnFrame: columnFrame, budget: transcriptBudget),
                    transcript.count >= 80 {
                     await MainActor.run {
                         self.capturing = false

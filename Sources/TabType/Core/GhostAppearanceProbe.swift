@@ -72,7 +72,7 @@ final class GhostAppearanceProbe: ObservableObject {
             Log.shared.debug("occupancy: analysis failed — nil")
             return nil
         }
-        Log.shared.debug("occupancy: strip=\(rect) contrast=\(String(format: "%.2f", spread)) -> \(spread > 0.12 ? "OCCUPIED" : "free")")
+        Log.shared.debug("occupancy: strip=\(rect) contrast=\(String(format: "%.3f", spread)) -> \(spread > 0.12 ? "OCCUPIED" : "free")")
         return spread > 0.12
     }
 
@@ -184,7 +184,6 @@ final class GhostAppearanceProbe: ObservableObject {
         let w = image.width, h = image.height
         guard w > 0, h > 0 else { return nil }
 
-        var counts: [UInt32: Int] = [:]
         var lums: [Double] = []
         let stepX = max(1, w / 60), stepY = max(1, h / 20)
         for y in stride(from: 0, to: h, by: stepY) {
@@ -192,13 +191,17 @@ final class GhostAppearanceProbe: ObservableObject {
                 let o = y * bpr + x * bpp
                 let r = Double(ptr[o]) / 255, g = Double(ptr[o + 1]) / 255, b = Double(ptr[o + 2]) / 255
                 lums.append(0.299 * r + 0.587 * g + 0.114 * b)
-                let key = (UInt32(r * 7) << 6) | (UInt32(g * 7) << 3) | UInt32(b * 7)
-                counts[key, default: 0] += 1
             }
         }
-        guard let bgKey = counts.max(by: { $0.value < $1.value })?.key else { return nil }
-        let bg = (Double((bgKey >> 6) & 7) / 7, Double((bgKey >> 3) & 7) / 7, Double(bgKey & 7) / 7)
-        let bgLum = 0.299 * bg.0 + 0.587 * bg.1 + 0.114 * bg.2
+        guard !lums.isEmpty else { return nil }
+        // Background = MEDIAN sampled luminance. (The previous modal-colour
+        // approach reconstructed the background from a truncated 3-bit bucket —
+        // a dark grey of lum ~0.13 truncated to bucket 0 = pure black, so every
+        // background pixel read as ~0.13 "contrast" and dark input bars were
+        // permanently OCCUPIED.) Glyph ink is sparse in the strip, so the median
+        // is background; text pixels then stand out by their real contrast.
+        let sorted = lums.sorted()
+        let bgLum = sorted[sorted.count / 2]
         return lums.map { abs($0 - bgLum) }.max()
     }
 

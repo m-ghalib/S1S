@@ -370,6 +370,14 @@ struct StatisticsPane: View {
                 LabeledContent("Suggestions accepted", value: "\(stats.suggestionsAccepted)")
                 LabeledContent("Acceptance rate", value: percent(stats.acceptanceRate))
             }
+            Section("Suggestion Funnel") {
+                LabeledContent("Show rate", value: percent(stats.showRate))
+                ForEach(Statistics.FunnelEvent.allCases, id: \.rawValue) { event in
+                    LabeledContent(event.label, value: "\(stats.funnel[event] ?? 0)")
+                }
+                Text("Where suggestions die between a model request and the ghost text on screen. A low show rate with high rejection counts points at over-aggressive filtering; high \"input changed\" counts point at latency.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section {
                 Button("Reset Statistics", role: .destructive) { stats.reset() }
             }

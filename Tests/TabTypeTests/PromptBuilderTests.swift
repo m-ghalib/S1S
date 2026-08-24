@@ -64,6 +64,25 @@ final class PromptBuilderTests: XCTestCase {
         XCTAssertTrue(body.contains("ending here"), "most recent prefix chars must survive")
     }
 
+    func testChatScreenBudgetActuallyFlowsThroughDefaultCap() {
+        // At the default cap, a chat app's full screen-context budget (1400 chars,
+        // AppPolicyStore.chatContextCap) must survive alongside a full-size typed
+        // prefix — at the old 2600 cap it silently starved to ~1100 for ALL
+        // sections combined.
+        var req = makeRequest(before: String(repeating: "p", count: 1195) + " tail",
+                              screen: String(repeating: "s", count: 1395) + " scrn")
+        req.screenContextBudget = 1400
+        let body = PromptBuilder.body(req, cap: PromptBuilder.defaultCap)
+        guard let open = body.range(of: "<on_screen"),
+              let close = body.range(of: "</on_screen>") else {
+            return XCTFail("missing on_screen section in: \(body.suffix(300))")
+        }
+        let screenLen = body.distance(from: open.upperBound, to: close.lowerBound)
+        XCTAssertGreaterThanOrEqual(screenLen, 1400,
+            "chat screen context got \(screenLen) chars — budget starved by the cap")
+        XCTAssertTrue(body.contains(" tail"), "typed prefix must survive untruncated")
+    }
+
     func testChatFormatScaffolding() {
         let req = makeRequest(before: "Hello wor")
         let chat = PromptBuilder.body(req, cap: 1500, chatFormat: true)

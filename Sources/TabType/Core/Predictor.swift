@@ -103,6 +103,7 @@ final class Predictor {
             pendingRequest = request
             pendingGeneration = generation
             Log.shared.debug("predict: local model busy, coalescing latest request")
+            Statistics.shared.record(.coalescedBusy)
             return nil
         }
         return await runGeneration(context: context, request: request, isDirectCall: true)
@@ -126,6 +127,7 @@ final class Predictor {
 
         if timedOut {
             consecutiveTimeouts += 1
+            Statistics.shared.record(.watchdogTimeout)
             Log.shared.debug("predict: generation exceeded \(watchdogTimeoutNanos / 1_000_000_000)s (consecutive: \(consecutiveTimeouts))")
             if consecutiveTimeouts >= maxConsecutiveTimeouts {
                 isWedged = true
@@ -161,6 +163,11 @@ final class Predictor {
 
         let superseded = myGen != generation
         let trimmed = superseded ? nil : result
+        if superseded {
+            Statistics.shared.record(.superseded)
+        } else if result == nil || result?.isEmpty == true {
+            Statistics.shared.record(.generatedEmpty)
+        }
 
         // Tail-call: run the newest coalesced request now that we're free, unless it
         // was itself superseded before it ever got a turn.
@@ -253,6 +260,7 @@ final class Predictor {
                 pc.reset()
                 pc.cache = ctx.model.newCache(parameters: params)
                 pc.modelId = modelId
+                Task { @MainActor in Statistics.shared.record(.cacheReset) }
             }
             var common = 0
             let maxCommon = min(pc.tokens.count, ids.count - 1)   // must feed ≥1 token
@@ -265,6 +273,7 @@ final class Predictor {
                     pc.reset()
                     pc.cache = ctx.model.newCache(parameters: params)
                     common = 0
+                    Task { @MainActor in Statistics.shared.record(.cacheReset) }
                 } else {
                     pc.tokens = Array(pc.tokens.prefix(common))
                 }
@@ -284,12 +293,23 @@ final class Predictor {
             var guardIds: [Int] = []
             if let eos = ctx.tokenizer.eosTokenId { guardIds.append(eos) }
             // Unambiguous reply-openers only — "Yes"/"No"/"I" are legitimate
-            // continuations and must never be banned at the sampler.
-            for opener in ["Sorry", " Sorry", "Sure", " Sure", "Certainly", " Certainly",
-                           "Hello", " Hello", "Hi", " Hi"] {
-                if let first = ctx.tokenizer.encode(text: opener, addSpecialTokens: false).first {
-                    guardIds.append(first)
+            // continuations and must never be banned at the sampler. Each opener is
+            // encoded in its bare, space- and newline-prefixed variants because BPE
+            // assigns them different ids; only single-token bans are meaningful (a
+            // multi-token word's first piece is a shared subword — banning it would
+            // veto unrelated legitimate continuations).
+            for opener in ["Sorry", " Sorry", "\nSorry", "Sure", " Sure", "\nSure",
+                           "Certainly", " Certainly", "\nCertainly",
+                           "Hello", " Hello", "\nHello", "Hi", " Hi", "\nHi"] {
+                let toks = ctx.tokenizer.encode(text: opener, addSpecialTokens: false)
+                guard toks.count == 1, let only = toks.first, !guardIds.contains(only) else {
+                    if verbose, toks.count > 1 {
+                        Log.shared.debug("startguard: \"\(opener)\" is \(toks.count) tokens — not banned (its first piece is a shared subword)")
+                    }
+                    continue
                 }
+                guardIds.append(only)
+                if verbose { Log.shared.debug("startguard: banning token \(only) = \"\(opener)\"") }
             }
             let iterator = try TokenIterator(
                 input: input, model: ctx.model, cache: pc.cache,
@@ -297,7 +317,19 @@ final class Predictor {
                 sampler: params.sampler(),
                 prefillStepSize: params.prefillStepSize,
                 maxTokens: params.maxTokens)
-            let result = MLXLMCommon.generate(input: input, context: ctx, iterator: iterator) { (_: [Int]) in .more }
+            let result = MLXLMCommon.generate(input: input, context: ctx, iterator: iterator) { (tokens: [Int]) in
+                // Early stop instead of always burning the full token budget:
+                // SuggestionTrimmer keeps only the first line and at most `maxWords`
+                // words, so anything past a newline, scaffold leakage ("Input:"),
+                // or the word cap is pure wasted decode time. The suggestion is
+                // ≤ maxTokens tokens, so re-decoding each step is trivial.
+                let text = ctx.tokenizer.decode(tokenIds: tokens)
+                if text.contains("\n") || text.contains("Input:") { return .stop }
+                if text.split(separator: " ", omittingEmptySubsequences: true).count > maxWords + 2 {
+                    return .stop
+                }
+                return .more
+            }
             let text = result.output
             if verbose {
                 let genMs = Int(Date().timeIntervalSince(genStart) * 1000)

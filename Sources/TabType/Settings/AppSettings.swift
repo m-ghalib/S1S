@@ -180,9 +180,16 @@ final class AppSettings: ObservableObject {
         isEnabled = defaults.object(forKey: Keys.isEnabled) as? Bool ?? true
         debounceMs = defaults.object(forKey: Keys.debounceMs) as? Int ?? 90
         continuousGeneration = defaults.object(forKey: Keys.continuousGeneration) as? Bool ?? true
-        // 28 tokens: enough for an 8-word completion without mid-word truncation
-        // on Qwen's tokenizer; SuggestionTrimmer bounds the visible length anyway.
-        maxTokens = defaults.object(forKey: Keys.maxTokens) as? Int ?? 28
+        // 40 tokens: headroom for a 14-word "long" completion without mid-word
+        // truncation on Qwen's tokenizer. Cheap since generation now stops at the
+        // first newline / word-cap (see Predictor's didGenerate); SuggestionTrimmer
+        // bounds the visible length anyway.
+        var storedMaxTokens = defaults.object(forKey: Keys.maxTokens) as? Int ?? 40
+        if storedMaxTokens == 28 {   // migrate the old default now that stops exist
+            storedMaxTokens = 40
+            defaults.set(storedMaxTokens, forKey: Keys.maxTokens)
+        }
+        maxTokens = storedMaxTokens
         maxWords = defaults.object(forKey: Keys.maxWords) as? Int ?? 8
         acceptWholeLine = defaults.object(forKey: Keys.acceptWholeLine) as? Bool ?? false
         ghostOpacity = defaults.object(forKey: Keys.ghostOpacity) as? Double ?? 0.45
@@ -193,8 +200,17 @@ final class AppSettings: ObservableObject {
         // Default to the model recommended for this Mac's hardware until the user
         // explicitly picks one.
         modelId = defaults.string(forKey: Keys.modelId) ?? HardwareInfo.recommendedModelId
-        temperature = defaults.object(forKey: Keys.temperature) as? Double ?? 0.1
-        // Must stay ≤ the PromptBuilder cap (1500) minus its reserve, or the prefix
+        // 0 = greedy ArgMax decoding: deterministic (same prompt → same suggestion)
+        // and marginally faster. MLX only uses ArgMax at exactly 0 — 0.1 still
+        // SAMPLES, which fed occasional low-probability first tokens straight into
+        // the rejection filters.
+        var storedTemperature = defaults.object(forKey: Keys.temperature) as? Double ?? 0.0
+        if storedTemperature == 0.1 {   // migrate the old default
+            storedTemperature = 0.0
+            defaults.set(storedTemperature, forKey: Keys.temperature)
+        }
+        temperature = storedTemperature
+        // Must stay ≤ the PromptBuilder cap (6000) minus its reserve, or the prefix
         // gets re-truncated and context sections starve.
         contextChars = defaults.object(forKey: Keys.contextChars) as? Int ?? 1200
         // Default OFF: OCR of the focused window repeatedly bled unrelated on-screen

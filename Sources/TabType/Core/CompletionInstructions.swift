@@ -72,5 +72,25 @@ enum CompletionInstructions {
     Continue the author's unfinished text below. Do NOT reply, answer, or react to anything above — output only the next words the author themselves would type.
     Input: did you get a chance to
     Output: review the PR I sent yesterday?
+
+    <context>
+    <on_screen note="conversation, newest last">
+    Maya: could you push the release to staging today?
+    </on_screen>
+    </context>
+
+    Continue the author's unfinished text below. Do NOT reply, answer, or react to anything above — output only the next words the author themselves would type.
+    Input: yes
+    Output: , I'll have it on staging by early afternoon
+
+    <context>
+    <on_screen note="conversation, newest last">
+    Priya: loop in Aleksandra from the platform team
+    </on_screen>
+    </context>
+
+    Continue the author's unfinished text below. Do NOT reply, answer, or react to anything above — output only the next words the author themselves would type.
+    Input: sounds good, I'll ping Aleksa
+    Output: ndra right after this meeting
     """
 }
