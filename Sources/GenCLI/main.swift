@@ -38,7 +38,7 @@ if args.first == "--ai" {
             Output:  They don't match what I'm actually typing.
             """
             let session = LanguageModelSession(instructions: instructions)
-            let options = GenerationOptions(sampling: .greedy, maximumResponseTokens: 16)
+            let options = GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 16)
             let start = Date()
             let response = try await session.respond(to: prompt, options: options)
             let dt = Date().timeIntervalSince(start)

@@ -81,9 +81,9 @@ final class SuggestionOverlay {
     /// the caret and the right limit — the caller should fall back to the HUD pill.
     ///
     /// When `fieldRect` (the focused text input's frame, AX top-left global) is
-    /// provided and sane, the ghost WRAPS like real text: line 1 starts at the caret
-    /// (via firstLineHeadIndent), wrapped lines start at the box's left edge, and
-    /// nothing draws below the box's bottom.
+    /// provided and sane, the ghost WRAPS like real text: line 1 starts at the caret,
+    /// wrapped lines start at the box's left edge, and nothing draws below the box's
+    /// bottom (see `showSplitWrapped`).
     @discardableResult
     func showInline(text: String, at caretRect: CGRect, font: NSFont, opacity: Double,
                     color: NSColor? = nil, maxRightX: CGFloat? = nil,
@@ -97,9 +97,14 @@ final class SuggestionOverlay {
         let padding: CGFloat = 1   // tight against the typed word, like the real text
 
         if let field = fieldRect, Self.isSaneFieldRect(field, caretRect: caretRect) {
-            return showWrapped(text: text, caretRect: caretRect, fieldRect: field,
-                               font: font, color: ghostColor, maxRightX: maxRightX,
-                               padding: padding, panel: panel)
+            // Same split layout as the Electron column path. The old single label
+            // with `firstLineHeadIndent` drew line 1 far left of the caret in wide
+            // fields (Notes, TT-001): Auto Layout shrank the label below the indent.
+            var column = field.insetBy(dx: 4, dy: 0)
+            if let maxRightX { column.size.width = min(column.width, maxRightX + 6 - column.minX) }
+            return showSplitWrapped(text: text, caretRect: caretRect, column: column,
+                                    bottom: field.maxY, font: font, color: ghostColor,
+                                    padding: padding, panel: panel)
         }
         if let column = columnRect, Self.isSaneFieldRect(column, caretRect: caretRect) {
             return showSplitWrapped(text: text, caretRect: caretRect, column: column,
@@ -156,56 +161,12 @@ final class SuggestionOverlay {
         return field.insetBy(dx: -8, dy: -8).contains(CGPoint(x: caretRect.midX, y: caretRect.midY))
     }
 
-    /// Cotypist-style wrapping ghost. Line 1 flows from the caret; wrapped lines
-    /// start at the field's left edge; lines are capped so nothing draws below the
-    /// field's bottom, with tail truncation on the last visible line.
-    private func showWrapped(text: String, caretRect: CGRect, fieldRect: CGRect,
-                             font: NSFont, color: NSColor, maxRightX: CGFloat?,
-                             padding: CGFloat, panel: NSPanel) -> Bool {
-        let inset: CGFloat = 4
-        var wrapWidth = min(fieldRect.width - inset * 2, 700)
-        if let maxRightX { wrapWidth = min(wrapWidth, maxRightX - (fieldRect.minX + inset)) }
-        let firstLineIndent = max(0, caretRect.maxX + padding - (fieldRect.minX + inset))
-        // Not enough room for even a couple of characters on the caret's line.
-        guard wrapWidth - firstLineIndent >= 30 else { hide(); return false }
-
-        let lineHeight = max(caretRect.height, font.ascender + abs(font.descender) + font.leading)
-        let linesBelow = max(1, Int((fieldRect.maxY - caretRect.minY) / lineHeight))
-        let maxLines = min(3, linesBelow)
-
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byWordWrapping
-        paragraph.firstLineHeadIndent = firstLineIndent
-        paragraph.minimumLineHeight = lineHeight
-        paragraph.maximumLineHeight = lineHeight
-        let attributed = NSAttributedString(string: text, attributes: [
-            .font: font, .foregroundColor: color, .paragraphStyle: paragraph,
-        ])
-
-        label.maximumNumberOfLines = maxLines
-        label.lineBreakMode = .byTruncatingTail   // applies to the final visible line
-        label.attributedStringValue = attributed
-        label.preferredMaxLayoutWidth = wrapWidth
-        var height = label.sizeThatFits(NSSize(width: wrapWidth, height: .greatestFiniteMagnitude)).height
-        height = min(height, CGFloat(maxLines) * lineHeight)
-        label.frame = CGRect(x: 0, y: 0, width: wrapWidth, height: height)
-
-        // Vertically center line 1 on the caret's line box (same nudge as the
-        // single-line path), extending downward for wrapped lines.
-        let verticalNudge = (caretRect.height - lineHeight) / 2
-        let flippedY = NSScreen.primaryHeight - (caretRect.minY + verticalNudge + height)
-        let origin = CGPoint(x: fieldRect.minX + inset, y: flippedY)
-        panel.setFrame(CGRect(origin: origin, size: CGSize(width: wrapWidth, height: height)),
-                       display: true)
-        panel.orderFrontRegardless()
-        return true
-    }
-
     /// Wrapping ghost for Electron editors (Obsidian, Notion). Line 1 is a plain
     /// single-line label starting at the caret, the same placement the legacy
     /// path uses (exact there). The words that don't fit continue in a second
     /// label at the text column's left edge, one caret-line pitch below. This
-    /// avoids `firstLineHeadIndent`, which renders at the wrong x in Electron.
+    /// avoids `firstLineHeadIndent`, which rendered at the wrong x in Electron and
+    /// in wide native fields. Also used for native fields (see `showInline`).
     /// `column` is the editor's content frame (AX top-left global); `bottom` is
     /// the lowest y continuation lines may reach (usually `column.maxY`).
     private func showSplitWrapped(text: String, caretRect: CGRect, column: CGRect,

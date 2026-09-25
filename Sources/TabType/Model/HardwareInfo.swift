@@ -15,7 +15,7 @@ enum HardwareInfo {
         guard size > 0 else { return "Apple Silicon" }
         var buffer = [CChar](repeating: 0, count: size)
         sysctlbyname("machdep.cpu.brand_string", &buffer, &size, nil, 0)
-        return String(cString: buffer)
+        return String(decoding: buffer.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)), as: UTF8.self)
     }
 
     /// The recommended model id for this machine's RAM. Unified memory on Apple

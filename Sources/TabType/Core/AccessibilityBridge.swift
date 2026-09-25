@@ -227,6 +227,19 @@ enum AccessibilityBridge {
         return nil
     }
 
+    /// The x where the caret's paragraph starts (Quartz global): the left edge of
+    /// the text column, which can sit well inside the element's frame (Notes pads
+    /// its text ~17pt). Nil on an empty paragraph or when AX has no bounds.
+    static func paragraphStartX(of element: AXUIElement) -> CGFloat? {
+        guard let full = stringValue(of: element) as NSString?,
+              let caret = caretOffset(of: element), caret > 0, caret <= full.length else { return nil }
+        let newline = full.range(of: "\n", options: .backwards, range: NSRange(location: 0, length: caret))
+        let start = newline.location == NSNotFound ? 0 : newline.location + 1
+        guard start < caret,
+              let r = boundsForRange(element, location: start, length: 1), isValidCaretRect(r) else { return nil }
+        return r.minX
+    }
+
     private static func boundsForRange(_ element: AXUIElement, location: Int, length: Int) -> CGRect? {
         guard location >= 0 else { return nil }
         var cfRange = CFRange(location: location, length: length)

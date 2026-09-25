@@ -253,7 +253,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             let view = SettingsView().environmentObject(settings).environmentObject(provider)
             let hosting = NSHostingController(rootView: view)
             let window = NSWindow(contentViewController: hosting)
-            window.title = "TabType Settings"
+            // SwiftUI's navigationTitle only reaches the window on a selection
+            // change, so seed it with the pane the window opens on.
+            window.title = (SettingsNavigator.shared.pendingSection ?? .setup).rawValue
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.setContentSize(NSSize(width: SettingsNavigator.shared.desiredContentWidth, height: 620))
             window.minSize = NSSize(width: 760, height: 460)
@@ -280,12 +282,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     /// Animate the settings window to a section's desired content width, keeping it
-    /// on screen. Height is preserved (respects any manual vertical resize).
+    /// on screen. Height is preserved (respects any manual vertical resize). A
+    /// hidden window (TabType hidden, or not shown yet) is resized without
+    /// animation, so a width change made while it was hidden isn't lost.
     private func resizeSettings(toContentWidth width: CGFloat) {
-        guard let window = settingsWindow, window.isVisible else {
-            Log.shared.debug("resizeSettings(\(width)) skipped — window not visible")
-            return
-        }
+        guard let window = settingsWindow else { return }
         let currentContent = window.contentRect(forFrameRect: window.frame).size
         Log.shared.debug("resizeSettings: \(currentContent.width) -> \(width)")
         guard abs(currentContent.width - width) > 1 else { return }
@@ -300,7 +301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
         // `setFrame(_:display:animate:)` is the reliable AppKit API — `animator()`
         // outside an explicit animation context can silently no-op.
-        window.setFrame(frame, display: true, animate: true)
+        window.setFrame(frame, display: window.isVisible, animate: window.isVisible)
     }
 
     @objc private func showOnboarding() {

@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// At-a-glance setup dashboard (like Cotypist's Setup screen): permission grants,
@@ -61,7 +62,7 @@ struct SetupPane: View {
 
             Section("Optional") {
                 Toggle("Use clipboard as context", isOn: $settings.useClipboardContext)
-                Text("When on, TabType reads your clipboard to better understand what you're working on. Processed locally; never stored or sent anywhere. (Free — no upgrade required.)")
+                Text("When on, TabType reads your clipboard to better understand what you're working on. Processed locally; never stored or sent anywhere.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

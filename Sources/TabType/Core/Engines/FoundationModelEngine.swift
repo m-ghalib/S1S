@@ -43,7 +43,7 @@ final class FoundationModelEngine: SuggestionEngine {
             instructions: CompletionInstructions.system(personalExamples: request.personalExamples))
         // Greedy decoding for low temperature gives the most predictable completion.
         let options: GenerationOptions = request.temperature <= 0.15
-            ? GenerationOptions(sampling: .greedy, maximumResponseTokens: request.maxTokens)
+            ? GenerationOptions(samplingMode: .greedy, maximumResponseTokens: request.maxTokens)
             : GenerationOptions(temperature: request.temperature,
                                 maximumResponseTokens: request.maxTokens)
 

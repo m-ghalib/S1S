@@ -738,7 +738,7 @@ final class Engine {
     /// caret THEN, and presents. A newer keystroke re-arms the wait; a changed
     /// suggestion aborts it.
     private func presentWhenSettled(suggestion: String, isNewSuggestion: Bool,
-                                    allowWrap: Bool = false, minSettle: TimeInterval? = nil) {
+                                    allowWrap: Bool = true, minSettle: TimeInterval? = nil) {
         // Register immediately: any keystroke during the wait clears/replaces it
         // (clearSuggestion / type-through), aborting the scheduled presentation.
         currentSuggestion = suggestion
@@ -888,6 +888,43 @@ final class Engine {
         if sugLower.hasPrefix(tailLower), sug.count > tail.count {
             let stripped = String(sug.dropFirst(tail.count))
             return stripped.isEmpty ? nil : stripped
+        }
+        return suggestion
+    }
+
+    /// Strips a restatement of the last few typed words ("I thin" → "I think the
+    /// key"), which `stripEcho` misses because the restated tail doesn't match the
+    /// typed text exactly. Mid-word, the last typed word only needs to be a prefix
+    /// of the restated one, and its untyped letters are kept ("k the key"). At
+    /// least 2 words must be restated: one repeated word ("that that") is normal
+    /// writing. Returns nil when the suggestion is nothing but the restatement.
+    nonisolated static func stripRestatedTail(_ suggestion: String, prefix: String) -> String? {
+        let typed = prefix.suffix(120).split(whereSeparator: \.isWhitespace).suffix(4)
+        // The suggestion's first words, as ranges into `suggestion`.
+        var restated: [Range<String.Index>] = []
+        var i = suggestion.startIndex
+        while restated.count < 4, i < suggestion.endIndex {
+            if suggestion[i].isWhitespace { i = suggestion.index(after: i); continue }
+            let start = i
+            while i < suggestion.endIndex, !suggestion[i].isWhitespace { i = suggestion.index(after: i) }
+            restated.append(start..<i)
+        }
+        let midWord = prefix.last.map { !$0.isWhitespace } ?? false
+        let maxK = min(typed.count, restated.count)
+        guard maxK >= 2 else { return suggestion }
+        for k in stride(from: maxK, through: 2, by: -1) {
+            let t = typed.suffix(k).map { $0.lowercased() }
+            let r = restated.prefix(k).map { suggestion[$0].lowercased() }
+            guard t.dropLast() == r.dropLast(),
+                  let lastTyped = t.last, let lastRestated = r.last,
+                  midWord ? lastRestated.hasPrefix(lastTyped) : lastRestated == lastTyped
+            else { continue }
+            // Cut after the typed part of the last restated word.
+            let word = restated[k - 1]
+            let cut = suggestion.index(word.lowerBound, offsetBy: typed[typed.endIndex - 1].count,
+                                       limitedBy: word.upperBound) ?? word.upperBound
+            let rest = String(suggestion[cut...])
+            return rest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : rest
         }
         return suggestion
     }
@@ -1313,7 +1350,14 @@ final class Engine {
             Statistics.shared.record(.rejectedEcho)
             return
         }
-        guard let clean = Engine.stripAssistantSpeak(deEchoed, inputTail: String(ctxInput.suffix(10))) else {
+        // The model sometimes restates the last few typed words before continuing
+        // ("I thin" → "I think the key") — keep only the new part.
+        guard let unrestated = Engine.stripRestatedTail(deEchoed, prefix: ctxInput) else {
+            Log.shared.debug("predict -> (restated tail rejected) (\(elapsedMs)ms)")
+            Statistics.shared.record(.rejectedEcho)
+            return
+        }
+        guard let clean = Engine.stripAssistantSpeak(unrestated, inputTail: String(ctxInput.suffix(10))) else {
             Log.shared.debug("predict -> (assistant-speak rejected) (\(elapsedMs)ms)")
             Statistics.shared.record(.rejectedAssistantSpeak)
             return
@@ -1437,14 +1481,19 @@ final class Engine {
             // that text — show a bubble just above the caret instead (Sombra-style).
             // Only POSITIVE evidence of caret-at-end allows inline rendering; an
             // unreadable field (Electron) counts as mid-line, never inline-wrap.
-            // Wrap mode only in native apps: in Electron the attributed first-line
-            // indent renders at the wrong x (observed "system" drawn ~54pt left of
-            // the indent target), while the plain single-line path places exactly
-            // at the caret. Single-line + tail truncation is also what Cotypist
-            // shows in these apps.
+            // Field-rect wrap only in native apps. Electron apps get single-line +
+            // tail truncation (what Cotypist shows there) unless their policy opts
+            // into split-wrap against the column below.
             let caretAtEnd = element.map(AccessibilityBridge.caretConfirmedAtEnd) == true
             let elementFrame = element.flatMap { AccessibilityBridge.elementFrame(of: $0) }
-            let fieldRect = (allowWrap && caretAtEnd && !policy.laggyCaret) ? elementFrame : nil
+            var fieldRect = (allowWrap && caretAtEnd && !policy.laggyCaret) ? elementFrame : nil
+            // Wrapped lines start at the text column's left edge, which can sit
+            // inside the frame (Notes pads its text). The overlay insets the field
+            // by 4pt and its label pads text by 2pt, hence `left - 6`.
+            if let f = fieldRect, let left = element.flatMap(AccessibilityBridge.paragraphStartX),
+               left - 6 > f.minX, left < caretRect.maxX {
+                fieldRect = CGRect(x: left - 6, y: f.minY, width: f.maxX - left + 6, height: f.height)
+            }
             // Electron editors with split-wrap (Obsidian, Notion, Claude Desktop):
             // line 1 at the caret, the rest at the field's left edge (observed to
             // match the text column in Obsidian).
@@ -1464,9 +1513,8 @@ final class Engine {
                 return limit
             }()
             // Info level (not verbose-only) so a misplaced ghost can be diagnosed from
-            // a default log: the caret, the box it sits in, and the wrap indent.
-            let indent = fieldRect.map { max(0, caretRect.maxX - $0.minX) }
-            Log.shared.info("placement app=\(AccessibilityBridge.frontmostBundleId() ?? "?") new=\(isNewSuggestion) caretRect=\(caretRect) fieldRect=\(elementFrame.map { "\($0)" } ?? "nil") wrap=\(fieldRect != nil) firstLineIndent=\(indent.map { String(format: "%.1f", $0) } ?? "n/a") axFont=\(axFont != nil ? "yes(\(axFont!.pointSize)pt)" : "no, using \(base.pointSize)pt heuristic") fontFactor=\(policy.fontFactor) verticalOffset=\(policy.verticalOffset)")
+            // a default log: the caret, the box it sits in, and where line 1 starts.
+            Log.shared.info("placement app=\(AccessibilityBridge.frontmostBundleId() ?? "?") new=\(isNewSuggestion) caretRect=\(caretRect) fieldRect=\(elementFrame.map { "\($0)" } ?? "nil") wrap=\(fieldRect != nil || columnRect != nil) line1X=\(String(format: "%.1f", caretRect.maxX + 1)) axFont=\(axFont != nil ? "yes(\(axFont!.pointSize)pt)" : "no, using \(base.pointSize)pt heuristic") fontFactor=\(policy.fontFactor) verticalOffset=\(policy.verticalOffset)")
 
             // Paint at a SPECIFIC caret rect and font — the occupancy retry must
             // render at the position it verified, and the ink-band probe may have
@@ -1674,7 +1722,7 @@ final class Engine {
             toInsert = suggestion
             remainder = ""
         } else {
-            var split = TextInserter.firstWord(of: suggestion)
+            let split = TextInserter.firstWord(of: suggestion)
             var accepted = split.accepted
             var rest = split.remainder
             // Optionally hold back trailing punctuation (…"word?" → "word" + "?").
@@ -1693,7 +1741,6 @@ final class Engine {
             }
             toInsert = accepted
             remainder = rest
-            _ = split
         }
 
         overlay.hide()

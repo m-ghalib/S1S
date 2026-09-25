@@ -54,7 +54,7 @@ struct SettingsView: View {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationTitle((selection ?? .general).rawValue)
+        .navigationTitle((selection ?? .setup).rawValue)
         .frame(minWidth: 680, minHeight: 460)
         .onAppear {
             if let pending = navigator.pendingSection {
@@ -435,7 +435,8 @@ struct AppsSettingsView: View {
 
     private func reload() {
         apps = NSWorkspace.shared.runningApplications
-            .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != nil }
+            .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != nil
+                && $0.bundleIdentifier != Bundle.main.bundleIdentifier }
             .map { RunningApp(id: $0.bundleIdentifier!, name: $0.localizedName ?? $0.bundleIdentifier!, icon: $0.icon) }
             .reduce(into: [RunningApp]()) { acc, app in
                 if !acc.contains(where: { $0.id == app.id }) { acc.append(app) }
@@ -559,7 +560,9 @@ private struct AppOverrideDetail: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Custom instructions") {
-                TextField("e.g. Use technical, concise language.", text: $override.customInstructions, axis: .vertical)
+                TextField("Custom instructions", text: $override.customInstructions,
+                          prompt: Text("e.g. Use technical, concise language."), axis: .vertical)
+                    .labelsHidden()
                     .lineLimit(2...5)
                 Text("Additional instructions for the model when completing text in this app.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -718,6 +721,8 @@ struct AdvancedSettingsView: View {
             }
             Section("Diagnostics") {
                 Toggle("Verbose logging", isOn: $settings.verboseLog)
+                Text("Writes your typed text and model output to the log file in plain text.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Button("Open Log in Console") {
                     NSWorkspace.shared.open(Log.fileURL)
                 }

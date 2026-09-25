@@ -73,6 +73,7 @@ app)
             --entitlements "$ROOT/Resources/TabType.entitlements" \
             "$APP"
     else
+        ADHOC=1
         echo "Signing ad-hoc (run Scripts/setup-signing.sh to persist permissions)."
         codesign --force --deep --sign - \
             --identifier app.tabtype.TabType \
@@ -82,6 +83,15 @@ app)
 
     echo "Done: $APP"
     echo "Run:  open \"$APP\"   (or: \"$APP/Contents/MacOS/TabType\" to see logs)"
+    if [ "${ADHOC:-0}" = 1 ]; then
+        cat >&2 <<'WARN'
+
+  +--------------------------------------------------------------------+
+  |  WARNING: signed ad-hoc. Accessibility must be granted again.      |
+  |  Run Scripts/setup-signing.sh once to keep the grant.              |
+  +--------------------------------------------------------------------+
+WARN
+    fi
     ;;
 *)
     echo "usage: $0 {gencli|app}" >&2

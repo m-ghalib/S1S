@@ -32,18 +32,26 @@ final class Log: @unchecked Sendable {
         write(message())
     }
 
+    /// Past this size the log moves to `tabtype.log.1` (replacing an older copy)
+    /// and a new file starts, so verbose logging can't grow it without bound.
+    private static let maxBytes: UInt64 = 5_000_000
+
     private func write(_ message: String) {
         let line = "[\(formatter.string(from: Date()))] \(message)\n"
         queue.async { [url] in
-            if let data = line.data(using: .utf8) {
-                if let handle = try? FileHandle(forWritingTo: url) {
-                    defer { try? handle.close() }
-                    handle.seekToEndOfFile()
+            guard let data = line.data(using: .utf8) else { return }
+            if let handle = try? FileHandle(forWritingTo: url) {
+                if handle.seekToEndOfFile() <= Self.maxBytes {
                     handle.write(data)
-                } else {
-                    try? data.write(to: url)
+                    try? handle.close()
+                    return
                 }
+                try? handle.close()
+                let rotated = url.appendingPathExtension("1")
+                try? FileManager.default.removeItem(at: rotated)
+                try? FileManager.default.moveItem(at: url, to: rotated)
             }
+            try? data.write(to: url)
         }
     }
 }

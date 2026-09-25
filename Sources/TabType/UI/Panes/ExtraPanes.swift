@@ -200,7 +200,6 @@ private struct KeyRecorder: NSViewRepresentable {
 
         override func keyDown(with event: NSEvent) {
             guard recording else { super.keyDown(with: event); return }
-            let flags = CGEventFlags(rawValue: UInt64(event.modifierFlags.rawValue))
             let b = KeyBinding(keyCode: Int(event.keyCode),
                                flags: cgFlags(from: event.modifierFlags))
             recording = false
@@ -266,13 +265,17 @@ struct PersonalizationPane: View {
                     .textFieldStyle(.roundedBorder)
                 VStack(alignment: .leading) {
                     Text("Writing style").font(.caption).foregroundStyle(.secondary)
-                    TextField("e.g. concise, friendly, British spelling", text: $settings.writingStyle, axis: .vertical)
+                    TextField("Writing style", text: $settings.writingStyle,
+                              prompt: Text("e.g. concise, friendly, British spelling"), axis: .vertical)
+                        .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .lineLimit(2...4)
                 }
                 VStack(alignment: .leading) {
                     Text("Custom instructions").font(.caption).foregroundStyle(.secondary)
-                    TextField("e.g. Avoid exclamation marks. Prefer plain words.", text: $settings.customInstructions, axis: .vertical)
+                    TextField("Custom instructions", text: $settings.customInstructions,
+                              prompt: Text("e.g. Avoid exclamation marks. Prefer plain words."), axis: .vertical)
+                        .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .lineLimit(2...5)
                 }

@@ -210,7 +210,7 @@ final class ScreenContextProvider: ObservableObject {
         let windowFrame = AccessibilityBridge.focusedWindowFrame()
         Task.detached(priority: .utility) {
             if let (app, _, text) = await ScreenContextProvider.captureFocusedWindow(pid: pid, fieldText: "", cropMode: AppSettings.shared.screenCropMode, caretRect: nil, windowFrame: windowFrame) {
-                Log.shared.info("screen self-test: OCR \(text.count) chars from \(app) — \"\(text.prefix(60))\"")
+                Log.shared.info("screen self-test: OCR \(text.count) chars from \(app)")
             } else {
                 Log.shared.info("screen self-test: no content window captured")
             }

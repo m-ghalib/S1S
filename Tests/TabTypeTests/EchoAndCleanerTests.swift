@@ -35,6 +35,34 @@ final class EchoAndCleanerTests: XCTestCase {
                                          prefix: "testing how fast the autocomplete"))
     }
 
+    // MARK: - stripRestatedTail
+
+    func testMidWordRestatementKeepsMissingLetters() {
+        XCTAssertEqual(Engine.stripRestatedTail(" I think the key", prefix: "review and I thin"),
+                       "k the key")
+    }
+
+    func testWordBoundaryRestatementStripped() {
+        XCTAssertEqual(Engine.stripRestatedTail(" I think the key", prefix: "and I think"),
+                       " the key")
+        XCTAssertEqual(Engine.stripRestatedTail("I think the key", prefix: "and I think "),
+                       " the key")
+    }
+
+    func testSingleWordRepeatNotStripped() {
+        XCTAssertEqual(Engine.stripRestatedTail(" that we agreed", prefix: "I know that"),
+                       " that we agreed")
+    }
+
+    func testForwardContinuationUnchanged() {
+        XCTAssertEqual(Engine.stripRestatedTail(" look through it", prefix: "I had a chance to"),
+                       " look through it")
+    }
+
+    func testFullRestatementRejected() {
+        XCTAssertNil(Engine.stripRestatedTail(" I think", prefix: "and I think"))
+    }
+
     // MARK: - OCRCleaner
 
     func testTwoWordChromeLinesDropped() {

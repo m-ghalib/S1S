@@ -170,9 +170,11 @@ final class Predictor {
         }
 
         // Tail-call: run the newest coalesced request now that we're free, unless it
-        // was itself superseded before it ever got a turn.
-        if let pending = pendingRequest, pendingGeneration >= myGen {
-            pendingRequest = nil
+        // was itself superseded before it ever got a turn (a `cancel()` since it
+        // was queued means the input changed and a fresher request will follow).
+        let pending = pendingRequest
+        pendingRequest = nil
+        if let pending, pendingGeneration == generation {
             Task { [weak self] in
                 guard let self else { return }
                 let pendingContext = PromptBuilder.body(pending, cap: PromptBuilder.defaultCap,
@@ -372,7 +374,7 @@ final class StartGuardProcessor: LogitProcessor {
     }
 
     func process(logits: MLXArray) -> MLXArray {
-        var logits = wrapped?.process(logits: logits) ?? logits
+        let logits = wrapped?.process(logits: logits) ?? logits
         if step == 0, !bannedFirst.isEmpty {
             logits[.ellipsis, MLXArray(bannedFirst)] = MLXArray(-Float.infinity)
         }
