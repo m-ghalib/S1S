@@ -17,6 +17,25 @@ final class AppPolicyTests: XCTestCase {
         XCTAssertEqual(p.profile, .chat)
     }
 
+    func testChatGPTDesktopGetsChatTreatment() {
+        let p = AppPolicyStore.policy(forBundleId: "com.openai.chat")
+        XCTAssertTrue(p.forceScreenContext)
+        XCTAssertTrue(p.transcriptViaAX)
+        XCTAssertEqual(p.screenContextCap, AppPolicyStore.chatContextCap)
+        XCTAssertEqual(p.profile, .chat)
+    }
+
+    func testXAndLinkedInGetChatTreatmentInChrome() {
+        for host in ["x.com", "www.linkedin.com"] {
+            let p = AppPolicyStore.policy(forBundleId: "com.google.Chrome", host: host)
+            XCTAssertTrue(p.forceScreenContext, host)
+            XCTAssertTrue(p.transcriptViaAX, host)
+            XCTAssertEqual(p.screenContextCap, AppPolicyStore.chatContextCap, host)
+        }
+        // Suffix match needs a dot boundary: box.com is not x.com.
+        XCTAssertFalse(AppPolicyStore.policy(forBundleId: "com.google.Chrome", host: "box.com").transcriptViaAX)
+    }
+
     func testChatDomainInBrowserGetsChatTreatment() {
         let p = AppPolicyStore.policy(forBundleId: "com.apple.Safari", host: "claude.ai")
         XCTAssertTrue(p.transcriptViaAX)
@@ -28,6 +47,25 @@ final class AppPolicyTests: XCTestCase {
         // Non-chat host stays standard.
         let plain = AppPolicyStore.policy(forBundleId: "com.apple.Safari", host: "example.com")
         XCTAssertFalse(plain.transcriptViaAX)
+    }
+
+    // MARK: - Chromium browsers
+
+    func testChromiumBrowsersMatchChromeInsertionAndFontFactor() {
+        let chrome = AppPolicyStore.policy(forBundleId: "com.google.Chrome")
+        XCTAssertEqual(chrome.insertionStrategy, .paste)
+        XCTAssertEqual(chrome.fontFactor, 1.0)
+
+        let bundleIDs = [
+            "company.thebrowser.Browser", "com.microsoft.edgemac",
+            "com.brave.Browser", "company.thebrowser.dia",
+            "com.vivaldi.Vivaldi", "org.chromium.Chromium",
+        ]
+        for id in bundleIDs {
+            let policy = AppPolicyStore.policy(forBundleId: id)
+            XCTAssertEqual(policy.insertionStrategy, .paste, id)
+            XCTAssertEqual(policy.fontFactor, 1.0, id)
+        }
     }
 
     func testDocumentAppProfile() {
@@ -93,6 +131,51 @@ final class AppPolicyTests: XCTestCase {
         XCTAssertTrue(o.improveCompatibility)
     }
 
+    // MARK: - Password managers
+
+    func testPasswordManagersStayDisabledDespiteEnableOverride() {
+        let bundleIDs = [
+            "me.proton.pass.electron",
+            "org.keepassxc.keepassxc",
+            "com.markmcguill.strongbox", "com.markmcguill.strongbox.pro",
+            "com.markmcguill.strongbox.mac", "com.markmcguill.strongbox.mac.pro",
+            "in.sinew.Enpass-Desktop.App", "in.sinew.Enpass-Desktop",
+            "com.nordsec.nordpass",
+            "com.sibersystems.RoboFormMac",
+        ]
+        for id in bundleIDs {
+            XCTAssertFalse(AppPolicyStore.policy(forBundleId: id).isEnabled, id)
+            var override = AppOverride()
+            override.enabled = true
+            AppPolicyStore.userOverrides[id] = override
+            XCTAssertFalse(AppPolicyStore.policy(forBundleId: id).isEnabled, id)
+            AppPolicyStore.userOverrides.removeValue(forKey: id)
+        }
+    }
+
+    // MARK: - Terminals
+
+    func testAdditionalTerminalsAreDisabledUnlessEnabledByUser() {
+        let bundleIDs = [
+            "co.zeit.hyper", "org.tabby", "com.raphaelamorim.rio",
+            "com.termius-dmg.mac", "com.termius.mac",
+            "dev.commandline.waveterm", "dev.warp.Warp-Preview",
+        ]
+        for id in bundleIDs {
+            let defaultPolicy = AppPolicyStore.policy(forBundleId: id)
+            XCTAssertFalse(defaultPolicy.isEnabled, id)
+            XCTAssertEqual(defaultPolicy.profile, .disabled, id)
+            var override = AppOverride()
+            override.enabled = true
+            AppPolicyStore.userOverrides[id] = override
+            let enabledPolicy = AppPolicyStore.policy(forBundleId: id)
+            XCTAssertTrue(enabledPolicy.isEnabled, id)
+            XCTAssertNotEqual(enabledPolicy.profile, .disabled, id)
+            AppPolicyStore.userOverrides.removeValue(forKey: id)
+            XCTAssertFalse(AppPolicyStore.policy(forBundleId: id).isEnabled, id)
+        }
+    }
+
     // MARK: - Zed
 
     func testZedMarkdownOnlyPolicy() {
@@ -152,5 +235,15 @@ final class AppPolicyTests: XCTestCase {
         XCTAssertFalse(p.disableTabKey, "Tab key must accept suggestions in Obsidian")
         // Profile badge.
         XCTAssertEqual(p.profile, .document)
+    }
+
+    // MARK: - Superhuman
+
+    func testSuperhumanPolicy() {
+        let p = AppPolicyStore.policy(forBundleId: "com.superhuman.electron")
+        XCTAssertTrue(p.documentProfile)
+        XCTAssertTrue(p.laggyCaret)
+        XCTAssertFalse(p.allowsMidLine)
+        XCTAssertEqual(p.insertionStrategy, .paste)
     }
 }

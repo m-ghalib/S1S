@@ -168,6 +168,24 @@ enum AppPolicyStore {
         "com.agilebits.onepassword7", "com.apple.Passwords",
         "com.bitwarden.desktop", "com.dashlane.Dashlane",
         "com.callpod.keepermac", "com.lastpass.LastPass",
+        // https://appcatalog.cloud/apps/proton-pass
+        "me.proton.pass.electron",
+        // https://github.com/keepassxreboot/keepassxc/blob/develop/src/CMakeLists.txt
+        "org.keepassxc.keepassxc",
+        // Current Strongbox editions: https://strongbox.reamaze.com/kb/faqs
+        "com.markmcguill.strongbox", "com.markmcguill.strongbox.pro",
+        // Earlier Mac editions: https://doesitarm.com/app/strongbox/
+        "com.markmcguill.strongbox.mac.pro",
+        // https://www.reddit.com/r/strongbox/comments/r347yx
+        "com.markmcguill.strongbox.mac",
+        // https://help.enpass.io/business/latest/google-workspace/deploying-enpass-on-macos
+        "in.sinew.Enpass-Desktop.App",
+        // Earlier Enpass edition: https://doesitarm.com/app/enpass/
+        "in.sinew.Enpass-Desktop",
+        // https://appcatalog.cloud/apps/nordpass
+        "com.nordsec.nordpass",
+        // https://appcatalog.cloud/apps/roboform
+        "com.sibersystems.RoboFormMac",
     ]
 
     /// Terminals — autocomplete is disruptive; disabled by default.
@@ -175,12 +193,35 @@ enum AppPolicyStore {
         "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable",
         "com.mitchellh.ghostty", "io.alacritty", "net.kovidgoyal.kitty",
         "com.github.wez.wezterm",
+        // https://github.com/desktop/desktop/blob/development/docs/technical/shell-integration.md
+        "co.zeit.hyper",
+        // https://github.com/Eugeny/tabby/blob/master/electron-builder.yml
+        "org.tabby",
+        // https://github.com/raphamorim/rio/issues/558
+        "com.raphaelamorim.rio",
+        // DMG and App Store editions: https://appcatalog.cloud/apps/termius
+        // https://doesitarm.com/app/termius
+        "com.termius-dmg.mac", "com.termius.mac",
+        // https://github.com/wavetermdev/waveterm/blob/main/package.json
+        "dev.commandline.waveterm",
+        // https://docs.warp.dev/support-and-community/troubleshooting-and-support/logging-out-and-uninstalling
+        "dev.warp.Warp-Preview",
     ]
 
     /// Apps that need clipboard paste for reliable insertion.
     private static let pasteApps: Set<String> = [
-        "com.tinyspeck.slackmacgap", "com.google.Chrome", "com.microsoft.VSCode",
+        "com.tinyspeck.slackmacgap", "com.microsoft.VSCode",
         "notion.id", "md.obsidian", "com.anthropic.claudefordesktop",
+        "com.superhuman.electron",
+    ]
+
+    /// Chromium browsers — Chrome's paste insertion and font metrics.
+    /// Bundle IDs: https://github.com/apple/password-manager-resources/blob/main/quirks/web-browser-extension-distribution-information.json
+    /// Chromium CFBundleIdentifier: https://chromium.googlesource.com/chromium/reference_builds/chrome_mac/+/171656641186a175df3e658075dffa1cacaf28ab/Chromium.app/Contents/Info.plist
+    private static let chromiumBrowsers: Set<String> = [
+        "com.google.Chrome", "company.thebrowser.Browser", "com.microsoft.edgemac",
+        "com.brave.Browser", "company.thebrowser.dia", "com.vivaldi.Vivaldi",
+        "org.chromium.Chromium",
     ]
 
     /// Code editors: prose autocomplete in the MAIN EDITOR collides with actual
@@ -206,12 +247,16 @@ enum AppPolicyStore {
         "com.microsoft.teams2", "us.zoom.xos",
         "org.whispersystems.signal-desktop", "im.riot.app", "im.beeper",
         "Mattermost.Desktop", "org.zulip.zulip-electron", "com.facebook.archon",
+        "com.superhuman.electron",
     ]
 
     /// Chat/messaging apps where recent conversation IS the context that matters —
     /// screen memory is force-enabled here regardless of the global toggle, with a
     /// larger character budget so more transcript survives into the prompt.
     private static let chatApps: Set<String> = [
+        // ChatGPT Classic bundle ID, documented by OpenAI's macOS launcher test:
+        // https://github.com/openai/codex/blob/main/codex-rs/cli/src/desktop_app/mac.rs
+        "com.openai.chat",
         "com.anthropic.claudefordesktop", "com.tinyspeck.slackmacgap",
         "com.hnc.Discord", "com.apple.MobileSMS", "net.whatsapp.WhatsApp",
         "ru.keepcoder.Telegram", "org.whispersystems.signal-desktop",
@@ -232,7 +277,7 @@ enum AppPolicyStore {
         "claude.ai", "chatgpt.com", "chat.openai.com", "gemini.google.com",
         "web.whatsapp.com", "web.telegram.org", "discord.com", "app.slack.com",
         "messenger.com", "chat.deepseek.com", "aistudio.google.com",
-        "poe.com", "perplexity.ai",
+        "poe.com", "perplexity.ai", "x.com", "linkedin.com",
     ]
 
     /// Long-form writing apps: the document itself is the context — read a much
@@ -243,6 +288,7 @@ enum AppPolicyStore {
         "net.shinyfrog.bear", "com.ulyssesapp.mac", "pro.writer.mac" /* iA Writer */,
         "abnerworks.Typora", "com.literatureandlatte.scrivener3",
         "md.obsidian", "notion.id", "dev.zed.Zed",
+        "com.superhuman.electron",
     ]
 
     /// Electron chat composers that get split-wrap despite not being document
@@ -259,6 +305,10 @@ enum AppPolicyStore {
         // Terminals are off by default, but the user can opt back in per app.
         if terminals.contains(id) { policy.isEnabled = false }
         if pasteApps.contains(id) { policy.insertionStrategy = .paste }
+        if chromiumBrowsers.contains(id) {
+            policy.insertionStrategy = .paste
+            policy.fontFactor = 1.0
+        }
         if chatApps.contains(id) {
             policy.forceScreenContext = true
             policy.screenContextCap = chatContextCap
@@ -290,10 +340,8 @@ enum AppPolicyStore {
         }
         switch id {
         case "com.apple.Safari": policy.fontFactor = 0.98
-        case "com.google.Chrome": policy.fontFactor = 1.0
         default: break
         }
-
         if let o = userOverrides[id] {
             if let e = o.enabled { policy.isEnabled = e }
             if let m = o.midLineEnabled { policy.allowsMidLine = m }
