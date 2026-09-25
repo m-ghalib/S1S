@@ -6,6 +6,9 @@ import XCTest
 final class ModelDownloaderTests: XCTestCase {
 
     private var dir: URL!
+    private let file = ModelDownloader.RemoteFile(name: "model.safetensors", size: 100)
+    private var partial: URL { dir.appendingPathComponent("model.safetensors.partial") }
+    private var destination: URL { dir.appendingPathComponent("model.safetensors") }
 
     override func setUpWithError() throws {
         dir = FileManager.default.temporaryDirectory
@@ -26,7 +29,6 @@ final class ModelDownloaderTests: XCTestCase {
     }
 
     func testFileSizeIsNotCachedPerURL() throws {
-        let partial = dir.appendingPathComponent("model.safetensors.partial")
         FileManager.default.createFile(atPath: partial.path, contents: Data(count: 10))
         XCTAssertEqual(ModelDownloader.fileSize(partial), 10)   // read at "resume start"
         try append(90, to: partial)
@@ -34,9 +36,6 @@ final class ModelDownloaderTests: XCTestCase {
     }
 
     func testFullSizePartialPublishesWithoutError() throws {
-        let file = ModelDownloader.RemoteFile(name: "model.safetensors", size: 100)
-        let partial = dir.appendingPathComponent("model.safetensors.partial")
-        let destination = dir.appendingPathComponent("model.safetensors")
         FileManager.default.createFile(atPath: partial.path, contents: Data(count: 40))
         _ = ModelDownloader.fileSize(partial)   // same URL sized before the transfer, as in download()
         try append(60, to: partial)
@@ -47,9 +46,6 @@ final class ModelDownloaderTests: XCTestCase {
     }
 
     func testShortPartialThrowsIncompleteAndIsKept() throws {
-        let file = ModelDownloader.RemoteFile(name: "model.safetensors", size: 100)
-        let partial = dir.appendingPathComponent("model.safetensors.partial")
-        let destination = dir.appendingPathComponent("model.safetensors")
         FileManager.default.createFile(atPath: partial.path, contents: Data(count: 40))
 
         XCTAssertThrowsError(try ModelDownloader.publish(file: file, partial: partial, destination: destination)) { error in

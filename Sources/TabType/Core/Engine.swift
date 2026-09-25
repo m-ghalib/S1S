@@ -1443,19 +1443,18 @@ final class Engine {
             // at the caret. Single-line + tail truncation is also what Cotypist
             // shows in these apps.
             let caretAtEnd = element.map(AccessibilityBridge.caretConfirmedAtEnd) == true
-            let fieldRect = (allowWrap && caretAtEnd && !policy.laggyCaret)
-                ? element.flatMap { AccessibilityBridge.elementFrame(of: $0) } : nil
+            let elementFrame = element.flatMap { AccessibilityBridge.elementFrame(of: $0) }
+            let fieldRect = (allowWrap && caretAtEnd && !policy.laggyCaret) ? elementFrame : nil
             // Electron editors with split-wrap (Obsidian, Notion, Claude Desktop):
             // line 1 at the caret, the rest at the field's left edge (observed to
             // match the text column in Obsidian).
             let columnRect = (allowWrap && caretAtEnd && policy.laggyCaret && policy.splitWrap)
-                ? element.flatMap { AccessibilityBridge.elementFrame(of: $0) } : nil
+                ? elementFrame : nil
             // Composers end at the caret's line — let wrapped lines spill below.
             let wrapBottom = policy.wrapBelowField ? windowRect.map { $0.maxY - 8 } : nil
             // Clamp the ghost to the text INPUT BOX's right edge, not just the
             // window's — composers are narrower than their windows, and a ghost
             // clamped only to the window spills past the box.
-            let elementFrame = element.flatMap { AccessibilityBridge.elementFrame(of: $0) }
             let boxRight: CGFloat? = {
                 var limit = windowRect.map { $0.maxX - 8 }
                 if let f = elementFrame, f.width >= 60, f.width <= 2400,
@@ -1584,7 +1583,7 @@ final class Engine {
                     let right = min(column.maxX - 6, boxRight ?? .greatestFiniteMagnitude)
                     return !SuggestionOverlay.splitToFit(
                         suggestion, width: right - (rect.maxX + 1),
-                        attributes: [.font: useFont]).1.isEmpty
+                        attributes: [.font: useFont]).tail.isEmpty
                 }()
                 if policy.laggyCaret, self.settings.textMirroring, !needsWrap,
                    let baseline = probedBaseline,

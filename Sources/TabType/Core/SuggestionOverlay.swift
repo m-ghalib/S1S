@@ -220,13 +220,11 @@ final class SuggestionOverlay {
 
         // Greedy word split: the longest prefix ending at a word boundary that
         // fits between the caret and the column's right edge.
-        let attrs: [NSAttributedString.Key: Any] = [.font: font]
-        let firstWidth = right - firstX
-        let (head, tail) = Self.splitToFit(text, width: firstWidth, attributes: attrs)
-        guard !(head.isEmpty && tail.isEmpty) else { hide(); return false }
+        let (head, tail) = Self.splitToFit(text, width: right - firstX, attributes: [.font: font])
 
-        let pitch = max(caretRect.height, font.ascender + abs(font.descender) + font.leading)
-        let lineHeight = ceil(font.ascender + abs(font.descender) + font.leading)
+        let lineBox = font.ascender + abs(font.descender) + font.leading
+        let pitch = max(caretRect.height, lineBox)
+        let lineHeight = ceil(lineBox)
         // Nothing may draw below `bottom`.
         let linesBelow = Int((bottom - caretRect.maxY) / pitch)
         let maxContinuation = min(2, max(0, linesBelow))
@@ -262,7 +260,7 @@ final class SuggestionOverlay {
         // Panel spans the column; line 1 is centered in the caret's line box and
         // continuation lines follow at the caret-line pitch.
         let panelTop = caretRect.minY + (caretRect.height - pitch) / 2
-        let panelHeight = pitch + (wraps ? contHeight : 0)
+        let panelHeight = pitch + contHeight
         let labelWidth = max(0, right - firstX)
         // Can't wrap and no room on the caret's line — let the caller use the HUD.
         if !wraps && labelWidth < 30 { hide(); return false }
@@ -285,7 +283,7 @@ final class SuggestionOverlay {
     /// fits `width`, and the remainder (leading whitespace dropped). The head is
     /// empty when not even the first word fits.
     static func splitToFit(_ text: String, width: CGFloat,
-                           attributes: [NSAttributedString.Key: Any]) -> (String, String) {
+                           attributes: [NSAttributedString.Key: Any]) -> (head: String, tail: String) {
         func fits(_ s: Substring) -> Bool {
             (String(s) as NSString).size(withAttributes: attributes).width <= width
         }
