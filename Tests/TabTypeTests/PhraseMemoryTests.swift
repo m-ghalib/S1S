@@ -103,6 +103,33 @@ final class PhraseMemoryTests: XCTestCase {
         XCTAssertFalse(tight?.contains("first message") == true)
     }
 
+    /// Electron web views clamp scrolled-off rows to the scroll view's top edge,
+    /// so many rows share one y. Ties must keep document order, not sort by x.
+    func testTranscriptAssemblyKeepsDocumentOrderForClampedRows() {
+        let lines: [(text: String, y: CGFloat, x: CGFloat)] = [
+            ("The clip: an older heading row", 364, 3232),
+            ("an older paragraph that was scrolled away", 364, 3193),
+            ("the newest visible reply at the bottom", 900, 3193),
+        ]
+        let out = TranscriptExtractor.assemble(lines: lines, budget: 2000)!
+        let heading = out.range(of: "The clip")!.lowerBound
+        let paragraph = out.range(of: "older paragraph")!.lowerBound
+        let newest = out.range(of: "newest visible")!.lowerBound
+        XCTAssertTrue(heading < paragraph && paragraph < newest)
+    }
+
+    func testColumnAnchorRejectsMissingNarrowOrFullWidthFields() {
+        let window = CGRect(x: 0, y: 0, width: 1800, height: 1000)
+        let composer = CGRect(x: 660, y: 900, width: 781, height: 25)
+        XCTAssertEqual(ScreenContextProvider.columnAnchor(field: composer, window: window), composer)
+        XCTAssertNil(ScreenContextProvider.columnAnchor(field: nil, window: window))
+        XCTAssertNil(ScreenContextProvider.columnAnchor(field: CGRect(x: 0, y: 0, width: 50, height: 20), window: window))
+        // A focused web area spans the sidebar too — not a column.
+        XCTAssertNil(ScreenContextProvider.columnAnchor(field: CGRect(x: 0, y: 40, width: 1800, height: 960), window: window))
+        // No window frame: trust the field.
+        XCTAssertEqual(ScreenContextProvider.columnAnchor(field: composer, window: nil), composer)
+    }
+
     func testDomainOverrideAppliesOnTopOfAppPolicy() {
         let saved = AppPolicyStore.userOverrides
         defer { AppPolicyStore.userOverrides = saved }

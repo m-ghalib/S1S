@@ -13,7 +13,7 @@ final class ScreenContextProvider: ObservableObject {
     static let shared = ScreenContextProvider()
 
     struct Entry {
-        let time: Date
+        var time: Date
         let app: String
         let bundleId: String
         let text: String
@@ -74,10 +74,12 @@ final class ScreenContextProvider: ObservableObject {
         }
         guard !capturing, Date().timeIntervalSince(lastCaptureStarted) > minInterval else { return }
         // Mid-burst freeze: while the user is actively typing, snapshots jitter
-        // and thrash the KV cache — wait for the pause.
-        guard Date().timeIntervalSince(lastEditAt) > 1.0 else { return }
-        capturing = true
-        lastCaptureStarted = Date()
+        // and thrash the KV cache — wait for the pause. Predictions fire inside
+        // that window, so a strict freeze blocked every capture while composing
+        // (a reply that streamed in meanwhile never reached the prompt): still
+        // allow one capture per 15s mid-burst.
+        guard Date().timeIntervalSince(lastEditAt) > 1.0
+                || Date().timeIntervalSince(lastCaptureStarted) > 15 else { return }
 
         // Capture the window the user is typing in (like cotabby/KeyType), and pass
         // the focused field's own text so we can strip it from the OCR (we don't want
@@ -106,8 +108,20 @@ final class ScreenContextProvider: ObservableObject {
         let focusedBox = focused.map(AXElementBox.init)
         // The input field's frame anchors the conversation column — the transcript
         // walk keeps only text in that column, so sidebars (session/contact lists)
-        // stop masquerading as the conversation.
-        let columnFrame = focused.flatMap { AccessibilityBridge.elementFrame(of: $0) }
+        // stop masquerading as the conversation. Only a real text input counts:
+        // right after an app switch the focused element can be the whole web
+        // area, whose frame spans the sidebar too.
+        let focusedIsInput = focused.map(AccessibilityBridge.isTextInput) ?? false
+        if tryAXTranscript && !focusedIsInput {
+            Log.shared.debug("screen memory: chat app without a focused input — skipping capture (no column anchor)")
+            return
+        }
+        let columnFrame = focusedIsInput
+            ? ScreenContextProvider.columnAnchor(
+                field: focused.flatMap(AccessibilityBridge.elementFrame(of:)), window: windowFrame)
+            : nil
+        capturing = true
+        lastCaptureStarted = Date()
 
         Task.detached(priority: .utility) {
             if let windowBox {
@@ -125,7 +139,8 @@ final class ScreenContextProvider: ObservableObject {
                 }
             }
             let capture = await ScreenContextProvider.captureFocusedWindow(
-                pid: frontPid, fieldText: fieldText, cropMode: cropMode, caretRect: caretRect, windowFrame: windowFrame)
+                pid: frontPid, fieldText: fieldText, cropMode: cropMode, caretRect: caretRect,
+                windowFrame: windowFrame, columnFrame: columnFrame)
             await MainActor.run {
                 self.capturing = false
                 if let (app, bid, text) = capture, text.count >= 12 {
@@ -147,8 +162,12 @@ final class ScreenContextProvider: ObservableObject {
         // Meaningful-change gate: a real new message changes the (normalized)
         // tail; scroll/timestamp jitter doesn't. Same tail + similar length ⇒
         // keep the EXISTING snapshot so the prompt bytes don't move.
-        if let last = history.last(where: { $0.bundleId == bundleId && $0.host == host }),
-           !TranscriptNormalizer.isMeaningfulChange(old: last.text, new: normalized) {
+        if let i = history.lastIndex(where: { $0.bundleId == bundleId && $0.host == host }),
+           !TranscriptNormalizer.isMeaningfulChange(old: history[i].text, new: normalized) {
+            // Still on screen, so still current: refresh its age. Otherwise an
+            // unchanged conversation ages past `maxAge` while every new capture
+            // is dropped as a duplicate, leaving the prompt with no context.
+            history[i].time = Date()
             return
         }
         history.append(Entry(time: Date(), app: app, bundleId: bundleId,
@@ -217,6 +236,15 @@ final class ScreenContextProvider: ObservableObject {
         }
     }
 
+    /// The conversation column anchored on the input field, or nil (fail open)
+    /// when the field is missing or spans most of the window — a full-width
+    /// "column" would let a sidebar through anyway.
+    nonisolated static func columnAnchor(field: CGRect?, window: CGRect?) -> CGRect? {
+        guard let field, field.width >= 100 else { return nil }
+        if let window, window.width > 0, field.width > window.width * 0.8 { return nil }
+        return field
+    }
+
     // MARK: Capture + OCR implementation
 
     /// Apps whose windows are UI chrome, not content — never OCR these.
@@ -230,7 +258,8 @@ final class ScreenContextProvider: ObservableObject {
     /// the context around where the user is typing, like cotabby/KeyType. Strips the
     /// focused field's own text (`fieldText`) so we don't echo what's being typed.
     nonisolated private static func captureFocusedWindow(
-        pid: pid_t?, fieldText: String, cropMode: AppSettings.ScreenCropMode, caretRect: CGRect?, windowFrame: CGRect?
+        pid: pid_t?, fieldText: String, cropMode: AppSettings.ScreenCropMode, caretRect: CGRect?, windowFrame: CGRect?,
+        columnFrame: CGRect? = nil
     ) async -> (String, String, String)? {
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(
@@ -303,7 +332,16 @@ final class ScreenContextProvider: ObservableObject {
                 caretNormX = min(max((caret.midX - window.frame.minX) / window.frame.width, 0), 1)
             }
 
-            guard let text = ocr(image, excluding: fieldText, cropMode: cropMode, caretNormX: caretNormX) else { return nil }
+            // No caret (common right after focusing an Electron app): fall back to
+            // the input field's column so the sidebar still drops out.
+            var columnNorm: ClosedRange<CGFloat>?
+            if caretNormX == nil, let col = columnFrame, window.frame.width > 0 {
+                let lo = (col.minX - window.frame.minX) / window.frame.width
+                let hi = (col.maxX - window.frame.minX) / window.frame.width
+                if lo < hi { columnNorm = lo...hi }
+            }
+            guard let text = ocr(image, excluding: fieldText, cropMode: cropMode,
+                                 caretNormX: caretNormX, columnNorm: columnNorm) else { return nil }
             let app = window.owningApplication?.applicationName ?? "Window"
             let bid = window.owningApplication?.bundleIdentifier ?? ""
             return (app, bid, text)
@@ -315,7 +353,8 @@ final class ScreenContextProvider: ObservableObject {
 
     nonisolated private static func ocr(_ image: CGImage, excluding fieldText: String = "",
                                         cropMode: AppSettings.ScreenCropMode,
-                                        caretNormX: CGFloat? = nil) -> String? {
+                                        caretNormX: CGFloat? = nil,
+                                        columnNorm: ClosedRange<CGFloat>? = nil) -> String? {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
@@ -336,6 +375,10 @@ final class ScreenContextProvider: ObservableObject {
             // are wide — a tight band discards the whole capture.
             observations = observations.filter {
                 $0.boundingBox.minX - 0.15 <= cx && cx <= $0.boundingBox.maxX + 0.15
+            }
+        } else if let col = columnNorm {
+            observations = observations.filter {
+                $0.boundingBox.maxX > col.lowerBound && $0.boundingBox.minX < col.upperBound
             }
         }
 

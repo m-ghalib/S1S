@@ -355,3 +355,30 @@ About 77% of requests were deferred. This may be expected with continuous genera
 **Fix:** The queued request runs only when `pendingGeneration == generation`, which means no `cancel()` has happened since it was queued. `Engine` calls `cancel()` in `clearSuggestion()` before it schedules the next prediction, so the newest request is not dropped. A stale queued request is now cleared.
 
 **Next step:** Compare the Statistics numbers after a similar session.
+
+## TT-016
+
+**Claude Desktop context shows the sidebar instead of the conversation**
+
+- **Severity:** High
+- **Status:** Fixed (verified live in Claude Desktop)
+
+**Steps:** Open a Claude Desktop chat with a long reply. Switch to Claude from another app, click the composer, and type a follow-up.
+
+**Evidence:** The `<on_screen>` block held sidebar chat titles ("Research paper search", "LinkedIn PM job digest") mixed with fragments of an older reply and the composer chrome ("Opus 5.5 Medium", "Add folder"). The latest reply was missing. Suggestions drifted to on-screen topics, for example "about the new AI ethics framework rollout?".
+
+**Causes:**
+
+1. On an app switch, the focused element can be the whole web area rather than the composer. The column filter used that element's frame, which spans the sidebar. When the AX walk failed, the OCR fallback ran without a caret and read the whole window, sorted by y. Sidebar rows and conversation rows were interleaved.
+2. Claude Desktop clamps the AX frames of scrolled-off rows to the top edge of the scroll view, so many rows share one y. `TranscriptExtractor.assemble` broke ties by x, which scrambled the transcript. The breadth-first walk also stopped at its character budget before it reached the newest reply.
+3. An unchanged conversation was never re-stored. After `maxAge` (150 s) its snapshot expired, and each new capture was dropped as a duplicate of the expired entry. The prompt then had no conversation context at all.
+4. The mid-burst freeze blocked every capture that a prediction triggered, because predictions run less than 1 s after a keystroke. A reply that streamed in after sending was not captured while the user composed the next message.
+
+**Fix:**
+
+1. Chat apps capture only when a text input has focus. `ScreenContextProvider.columnAnchor` rejects fields that span more than 80% of the window. The OCR fallback filters by that column when no caret is known.
+2. The transcript walk is a reverse depth-first walk, so text is collected newest first and the budget drops the oldest rows. Rows with equal y keep document order.
+3. A capture that matches the stored snapshot refreshes that snapshot's age.
+4. One capture per 15 s is allowed even while the user is typing.
+
+**Verification:** Tested in Claude Desktop on two chats. The prompt contained only conversation text, including the newest reply. The follow-up suggestion used that reply: "consumer doesn't trust AI to make personal decisions".

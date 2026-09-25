@@ -36,14 +36,15 @@ enum TranscriptExtractor {
         let maxDepth = 40
         var visits = 0
         var collectedChars = 0
-        var queue: [(AXUIElement, Int)] = [(windowElement, 0)]
-        var lines: [(text: String, y: CGFloat, x: CGFloat)] = []
+        // Reverse depth-first walk: the LAST child is visited first, so text is
+        // collected newest-first (reverse document order) and the char-based
+        // early exit drops the oldest messages. A breadth-first walk stopped
+        // partway through a long transcript and lost the latest reply.
+        var stack: [(AXUIElement, Int)] = [(windowElement, 0)]
+        var newestFirst: [(text: String, y: CGFloat, x: CGFloat)] = []
 
-        // 3× slack: BFS reaches rows roughly top-to-bottom, and `assemble` keeps
-        // the SUFFIX (newest messages) — exiting too early would cut the bottom
-        // of the conversation before the suffix-keep can prefer it.
-        while !queue.isEmpty, visits < maxVisits, collectedChars < budget * 3 {
-            let (element, depth) = queue.removeFirst()
+        while let (element, depth) = stack.popLast(), visits < maxVisits,
+              collectedChars < budget * 3 {
             visits += 1
             if let excluded, CFEqual(element, excluded) { continue }   // never echo the input field
 
@@ -53,7 +54,7 @@ enum TranscriptExtractor {
                    !isUIAnnouncement(text),
                    let frame = AccessibilityBridge.elementFrame(of: element),
                    overlapsColumn(frame, columnFrame) {
-                    lines.append((text, frame.minY, frame.minX))
+                    newestFirst.append((text, frame.minY, frame.minX))
                     collectedChars += text.count
                 }
                 continue   // static text is a leaf for our purposes
@@ -70,9 +71,10 @@ enum TranscriptExtractor {
                 continue
             }
             for child in AccessibilityBridge.children(of: element) {
-                queue.append((child, depth + 1))
+                stack.append((child, depth + 1))
             }
         }
+        let lines = Array(newestFirst.reversed())
         // Fewer than a few real lines is not a conversation — return nil so the
         // caller falls back to pixel OCR instead of feeding the model stray UI
         // strings as "the conversation".
@@ -98,13 +100,16 @@ enum TranscriptExtractor {
         text.range(of: #"[0-9a-f]{6,}-[0-9a-f]{2,}"#, options: .regularExpression) != nil
     }
 
-    /// Pure text assembly: reading order (y, then x), the shared OCR hygiene
-    /// filters, then the most recent `budget` characters.
+    /// Pure text assembly: reading order (y, then the document order `lines`
+    /// arrive in), the shared OCR hygiene filters, then the most recent `budget`
+    /// characters. Ties keep document order because web views (Claude Desktop)
+    /// clamp scrolled-off rows to the scroll view's edge, so many rows share one
+    /// y; sorting those by x scrambled the transcript.
     nonisolated static func assemble(lines: [(text: String, y: CGFloat, x: CGFloat)],
                                      budget: Int) -> String? {
-        let ordered = lines.sorted {
-            $0.y != $1.y ? $0.y < $1.y : $0.x < $1.x
-        }.map(\.text)
+        let ordered = lines.enumerated().sorted {
+            $0.element.y != $1.element.y ? $0.element.y < $1.element.y : $0.offset < $1.offset
+        }.map(\.element.text)
         let cleaned = OCRCleaner.clean(ordered)
         guard !cleaned.isEmpty else { return nil }
         let text = cleaned.count > budget ? String(cleaned.suffix(budget)) : cleaned
