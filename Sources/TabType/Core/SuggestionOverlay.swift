@@ -87,7 +87,8 @@ final class SuggestionOverlay {
     @discardableResult
     func showInline(text: String, at caretRect: CGRect, font: NSFont, opacity: Double,
                     color: NSColor? = nil, maxRightX: CGFloat? = nil,
-                    fieldRect: CGRect? = nil, columnRect: CGRect? = nil) -> Bool {
+                    fieldRect: CGRect? = nil, columnRect: CGRect? = nil,
+                    wrapBottom: CGFloat? = nil) -> Bool {
         guard let panel, !text.isEmpty else { hide(); return true }
         background.isHidden = true
         continuation.isHidden = true
@@ -102,6 +103,7 @@ final class SuggestionOverlay {
         }
         if let column = columnRect, Self.isSaneFieldRect(column, caretRect: caretRect) {
             return showSplitWrapped(text: text, caretRect: caretRect, column: column,
+                                    bottom: max(column.maxY, wrapBottom ?? column.maxY),
                                     font: font, color: ghostColor, padding: padding,
                                     panel: panel)
         }
@@ -204,9 +206,10 @@ final class SuggestionOverlay {
     /// path uses (exact there). The words that don't fit continue in a second
     /// label at the text column's left edge, one caret-line pitch below. This
     /// avoids `firstLineHeadIndent`, which renders at the wrong x in Electron.
-    /// `column` is the editor's content frame (AX top-left global).
+    /// `column` is the editor's content frame (AX top-left global); `bottom` is
+    /// the lowest y continuation lines may reach (usually `column.maxY`).
     private func showSplitWrapped(text: String, caretRect: CGRect, column: CGRect,
-                                  font: NSFont, color: NSColor, padding: CGFloat,
+                                  bottom: CGFloat, font: NSFont, color: NSColor, padding: CGFloat,
                                   panel: NSPanel) -> Bool {
         let inset: CGFloat = 6
         let left = column.minX
@@ -224,8 +227,8 @@ final class SuggestionOverlay {
 
         let pitch = max(caretRect.height, font.ascender + abs(font.descender) + font.leading)
         let lineHeight = ceil(font.ascender + abs(font.descender) + font.leading)
-        // Nothing may draw below the column (editor frame) bottom.
-        let linesBelow = Int((column.maxY - caretRect.maxY) / pitch)
+        // Nothing may draw below `bottom`.
+        let linesBelow = Int((bottom - caretRect.maxY) / pitch)
         let maxContinuation = min(2, max(0, linesBelow))
         let wraps = !tail.isEmpty && maxContinuation > 0
 

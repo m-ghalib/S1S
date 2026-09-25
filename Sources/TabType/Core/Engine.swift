@@ -1445,11 +1445,13 @@ final class Engine {
             let caretAtEnd = element.map(AccessibilityBridge.caretConfirmedAtEnd) == true
             let fieldRect = (allowWrap && caretAtEnd && !policy.laggyCaret)
                 ? element.flatMap { AccessibilityBridge.elementFrame(of: $0) } : nil
-            // Electron document editors (Obsidian, Notion): wrap via a split
-            // layout instead — line 1 at the caret, the rest at the editor's left
-            // edge (observed to match the text column in Obsidian).
-            let columnRect = (allowWrap && caretAtEnd && policy.laggyCaret && policy.documentProfile)
+            // Electron editors with split-wrap (Obsidian, Notion, Claude Desktop):
+            // line 1 at the caret, the rest at the field's left edge (observed to
+            // match the text column in Obsidian).
+            let columnRect = (allowWrap && caretAtEnd && policy.laggyCaret && policy.splitWrap)
                 ? element.flatMap { AccessibilityBridge.elementFrame(of: $0) } : nil
+            // Composers end at the caret's line — let wrapped lines spill below.
+            let wrapBottom = policy.wrapBelowField ? windowRect.map { $0.maxY - 8 } : nil
             // Clamp the ghost to the text INPUT BOX's right edge, not just the
             // window's — composers are narrower than their windows, and a ghost
             // clamped only to the window spills past the box.
@@ -1476,7 +1478,7 @@ final class Engine {
                     text: suggestion, at: rect, font: useFont,
                     opacity: self.settings.ghostOpacity, color: color,
                     maxRightX: boxRight,
-                    fieldRect: fieldRect, columnRect: columnRect)
+                    fieldRect: fieldRect, columnRect: columnRect, wrapBottom: wrapBottom)
                 if !shown {
                     // No room for even a couple of characters inline — HUD pill.
                     self.overlay.showHUD(text: suggestion, windowRect: windowRect)

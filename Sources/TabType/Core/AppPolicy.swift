@@ -62,6 +62,12 @@ struct AppPolicy {
     /// indicates a Markdown (.md) file — used for code editors like Zed that
     /// host both prose and code files in the same editor surface.
     var markdownFilesOnly: Bool = false
+    /// Electron editors where an overflowing suggestion wraps: line 1 at the
+    /// caret, the rest at the field's left edge (see `showSplitWrapped`).
+    var splitWrap: Bool = false
+    /// Split-wrap continuation lines may draw below the field's frame, down to
+    /// the window's bottom — for composers whose AX frame ends at the caret's line.
+    var wrapBelowField: Bool = false
 }
 
 // MARK: - Profile classification + plain-English summary (Settings transparency)
@@ -239,6 +245,10 @@ enum AppPolicyStore {
         "md.obsidian", "notion.id", "dev.zed.Zed",
     ]
 
+    /// Electron chat composers that get split-wrap despite not being document
+    /// apps; their field frame ends at the last text line, so wraps spill below it.
+    private static let wrappingComposerApps: Set<String> = ["com.anthropic.claudefordesktop"]
+
     static func policy(forBundleId id: String?) -> AppPolicy {
         guard let id else { return AppPolicy() }
         // Password managers stay off regardless of user overrides (safety).
@@ -265,6 +275,11 @@ enum AppPolicyStore {
         if electronApps.contains(id) {
             policy.laggyCaret = true
             policy.allowsMidLine = false
+            policy.splitWrap = policy.documentProfile
+        }
+        if wrappingComposerApps.contains(id) {
+            policy.splitWrap = true
+            policy.wrapBelowField = true
         }
         if codeEditorApps.contains(id)
             || codeEditorBundlePrefixes.contains(where: { id.hasPrefix($0) }) {
