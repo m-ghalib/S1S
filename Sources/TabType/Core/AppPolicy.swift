@@ -58,6 +58,10 @@ struct AppPolicy {
     /// Overrides how many chars before the caret are read (nil = the global
     /// `contextChars` setting). Document apps get a bigger window.
     var inputContextChars: Int?
+    /// When true, suggestions are shown only when the focused window's title
+    /// indicates a Markdown (.md) file — used for code editors like Zed that
+    /// host both prose and code files in the same editor surface.
+    var markdownFilesOnly: Bool = false
 }
 
 // MARK: - Profile classification + plain-English summary (Settings transparency)
@@ -170,7 +174,7 @@ enum AppPolicyStore {
     /// Apps that need clipboard paste for reliable insertion.
     private static let pasteApps: Set<String> = [
         "com.tinyspeck.slackmacgap", "com.google.Chrome", "com.microsoft.VSCode",
-        "notion.id", "md.obsidian",
+        "notion.id", "md.obsidian", "com.anthropic.claudefordesktop",
     ]
 
     /// Code editors: prose autocomplete in the MAIN EDITOR collides with actual
@@ -181,6 +185,10 @@ enum AppPolicyStore {
         "com.exafunction.windsurf", "com.apple.dt.Xcode",
     ]
     private static let codeEditorBundlePrefixes = ["com.jetbrains."]
+
+    /// Code editors where suggestions are restricted to Markdown (.md) files only;
+    /// the runtime window-title check is performed via `markdownFilesOnly` policy flag.
+    private static let markdownEditorApps: Set<String> = ["dev.zed.Zed"]
 
     /// Electron/Chromium apps whose AX caret bounds lag the real caret while
     /// typing (observed ~0.5s in Claude Desktop) — inline ghost placement can't be
@@ -258,6 +266,11 @@ enum AppPolicyStore {
         if codeEditorApps.contains(id)
             || codeEditorBundlePrefixes.contains(where: { id.hasPrefix($0) }) {
             policy.chatPanelsOnly = true
+        }
+        if markdownEditorApps.contains(id) {
+            policy.markdownFilesOnly = true
+            policy.documentProfile = true
+            policy.inputContextChars = 2000
         }
         switch id {
         case "com.apple.Safari": policy.fontFactor = 0.98

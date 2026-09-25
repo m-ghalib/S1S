@@ -313,6 +313,13 @@ enum AccessibilityBridge {
         NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     }
 
+    /// The kAXTitleAttribute of a window element, or nil.
+    static func windowTitle(of window: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &value) == .success else { return nil }
+        return value as? String
+    }
+
     /// Best-effort host of the URL for the focused browser tab (via `kAXURLAttribute`
     /// on the focused element or its window). Returns nil for non-browser contexts.
     static func frontmostURLHost() -> String? {

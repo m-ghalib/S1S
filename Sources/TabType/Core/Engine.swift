@@ -96,6 +96,15 @@ final class Engine {
     /// chat composers — never the tall main-editor surface.
     private func allowedByChatPanelPolicy(_ policy: AppPolicy, element: AXUIElement?,
                                           bundleId: String?) -> Bool {
+        // Markdown-only editors (e.g. Zed): allow only when the focused window title
+        // indicates a .md file; suppress suggestions in all other file types.
+        if policy.markdownFilesOnly, !forceNextPrediction {
+            guard let element,
+                  let window = ContextReader.windowOf(element),
+                  let title = AccessibilityBridge.windowTitle(of: window) else { return false }
+            let t = title.lowercased()
+            guard t.hasSuffix(".md") || t.contains(".md ") || t.contains(".md\t") else { return false }
+        }
         guard policy.chatPanelsOnly, !forceNextPrediction else { return true }
         if let element, AccessibilityBridge.isTextInput(element),
            let frame = AccessibilityBridge.elementFrame(of: element),

@@ -92,4 +92,73 @@ final class AppPolicyTests: XCTestCase {
         XCTAssertNil(o.contextSize)
         XCTAssertTrue(o.improveCompatibility)
     }
+
+    // MARK: - Zed
+
+    func testZedMarkdownOnlyPolicy() {
+        let p = AppPolicyStore.policy(forBundleId: "dev.zed.Zed")
+        // Enabled — file-type gating is runtime (window title), not a policy disable.
+        XCTAssertTrue(p.isEnabled, "Zed must not be disabled")
+        // Main editor receives suggestions (not chat-panels-only).
+        XCTAssertFalse(p.chatPanelsOnly, "Zed should not be chat-panels-only")
+        // markdownFilesOnly gates to .md files via runtime window-title check.
+        XCTAssertTrue(p.markdownFilesOnly, "Zed must restrict suggestions to .md files")
+        // Document profile: large context window for long-form markdown notes.
+        XCTAssertTrue(p.documentProfile, "Zed should use the document profile for .md")
+        XCTAssertEqual(p.inputContextChars, 2000)
+        // Tab key must accept suggestions (not disabled).
+        XCTAssertFalse(p.disableTabKey, "Tab key must accept suggestions in Zed")
+        // Profile badge.
+        XCTAssertEqual(p.profile, .document)
+    }
+
+    func testZedNonMarkdownIsDisabledByDefault() {
+        // Zed is NOT in codeEditorApps, so no chatPanelsOnly; markdownFilesOnly is the
+        // only gate. Non-.md surface suppression is enforced at runtime in Engine, not
+        // in the policy struct itself — policy stays enabled, markdownFilesOnly = true.
+        let p = AppPolicyStore.policy(forBundleId: "dev.zed.Zed")
+        XCTAssertTrue(p.isEnabled)
+        XCTAssertTrue(p.markdownFilesOnly)
+    }
+
+    // MARK: - Claude Desktop
+
+    func testClaudeDesktopPolicy() {
+        let p = AppPolicyStore.policy(forBundleId: "com.anthropic.claudefordesktop")
+        // Completions must be enabled.
+        XCTAssertTrue(p.isEnabled, "Claude Desktop must not be disabled")
+        // Electron caret bounds lag — suggestions render as a bubble above the caret.
+        XCTAssertTrue(p.laggyCaret, "Claude Desktop is Electron: caret bounds lag during typing")
+        // Mid-line suppressed because caret-bound accuracy can't be trusted there.
+        XCTAssertFalse(p.allowsMidLine, "Claude Desktop must not suggest mid-line")
+        // Paste insertion is required for reliable text entry in Electron renderers.
+        XCTAssertEqual(p.insertionStrategy, .paste, "Claude Desktop requires paste insertion")
+        // Tab key must accept suggestions (no Tab override active).
+        XCTAssertFalse(p.disableTabKey, "Tab key must accept suggestions in Claude Desktop")
+        // Chat profile: conversation is read from the AX tree, always-on context.
+        XCTAssertTrue(p.forceScreenContext, "Claude Desktop must force screen context")
+        XCTAssertTrue(p.transcriptViaAX, "Claude Desktop must use AX transcript")
+        XCTAssertEqual(p.screenContextCap, AppPolicyStore.chatContextCap)
+        // Profile badge.
+        XCTAssertEqual(p.profile, .chat)
+    }
+
+    // MARK: - Obsidian
+
+    func testObsidianPolicy() {
+        let p = AppPolicyStore.policy(forBundleId: "md.obsidian")
+        // Ghost-text must be enabled in the main editor.
+        XCTAssertTrue(p.isEnabled, "Obsidian must not be disabled")
+        XCTAssertFalse(p.chatPanelsOnly, "Obsidian main editor must receive suggestions")
+        // Electron caret bounds lag — suggestions settle before presenting.
+        XCTAssertTrue(p.laggyCaret, "Obsidian is Electron: caret bounds lag during typing")
+        // Document profile: large context window for long-form notes.
+        XCTAssertTrue(p.documentProfile, "Obsidian should use the document profile")
+        XCTAssertEqual(p.inputContextChars, 2000)
+        // Tab acceptance: paste insertion is required for Obsidian's Electron renderer.
+        XCTAssertEqual(p.insertionStrategy, .paste, "Obsidian requires paste insertion")
+        XCTAssertFalse(p.disableTabKey, "Tab key must accept suggestions in Obsidian")
+        // Profile badge.
+        XCTAssertEqual(p.profile, .document)
+    }
 }
