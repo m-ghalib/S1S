@@ -213,13 +213,13 @@ final class AppSettings: ObservableObject {
         // Must stay ≤ the PromptBuilder cap (6000) minus its reserve, or the prefix
         // gets re-truncated and context sections starve.
         contextChars = defaults.object(forKey: Keys.contextChars) as? Int ?? 1200
-        // Default OFF: OCR of the focused window repeatedly bled unrelated on-screen
-        // text (plans, docs, code) into suggestions. Opt-in for those who want it.
-        useScreenContext = defaults.object(forKey: Keys.useScreenContext) as? Bool ?? false
+        // Default ON: suggestions should match what's on screen out of the box.
+        // Caret-cropped OCR (below) limits bleed of unrelated text; users can opt out.
+        useScreenContext = defaults.object(forKey: Keys.useScreenContext) as? Bool ?? true
         // Caret-cropped is the default: OCR only the region around the caret, which
         // keeps toolbars/sidebars/unrelated paragraphs out of the prompt.
         screenCropMode = ScreenCropMode(rawValue: defaults.string(forKey: Keys.screenCropMode) ?? "") ?? .caretCropped
-        useClipboardContext = defaults.object(forKey: Keys.useClipboardContext) as? Bool ?? false
+        useClipboardContext = defaults.object(forKey: Keys.useClipboardContext) as? Bool ?? true
         useScreenshotAppearance = defaults.object(forKey: Keys.useScreenshotAppearance) as? Bool ?? true
         textMirroring = defaults.object(forKey: Keys.textMirroring) as? Bool ?? true
         showMenuBarIcon = defaults.object(forKey: Keys.showMenuBarIcon) as? Bool ?? true
@@ -231,7 +231,7 @@ final class AppSettings: ObservableObject {
         authorName = defaults.string(forKey: Keys.authorName) ?? NSFullUserName()
         writingStyle = defaults.string(forKey: Keys.writingStyle) ?? ""
         customInstructions = defaults.string(forKey: Keys.customInstructions) ?? ""
-        collectTypingHistory = defaults.object(forKey: Keys.collectTypingHistory) as? Bool ?? false
+        collectTypingHistory = defaults.object(forKey: Keys.collectTypingHistory) as? Bool ?? true
         storeInputsWithoutAcceptedCompletions = defaults.object(forKey: Keys.storeInputsWithoutAcceptedCompletions) as? Bool ?? true
         personalizeWordChoice = defaults.object(forKey: Keys.personalizeWordChoice) as? Double ?? 0
         disabledDomains = Set(defaults.stringArray(forKey: Keys.disabledDomains) ?? [])
