@@ -10,6 +10,8 @@ final class SuggestionOverlay {
 
     private var panel: NSPanel?
     private let label = NSTextField(labelWithString: "")
+    /// Wrapped lines below the caret's line in split-wrap mode (see `showSplitWrapped`).
+    private let continuation = NSTextField(labelWithString: "")
     private let background = NSVisualEffectView()
     /// Solid backdrop + caret replica for mirror mode (see `showMirror`).
     private let mirrorBackdrop = NSView()
@@ -45,6 +47,10 @@ final class SuggestionOverlay {
         label.maximumNumberOfLines = 1
         label.translatesAutoresizingMaskIntoConstraints = false
 
+        continuation.isBezeled = false
+        continuation.isEditable = false
+        continuation.drawsBackground = false
+        continuation.isHidden = true
         mirrorBackdrop.wantsLayer = true
         mirrorBackdrop.layer?.cornerRadius = 3
         mirrorBackdrop.isHidden = true
@@ -55,6 +61,7 @@ final class SuggestionOverlay {
         container.addSubview(mirrorBackdrop)
         container.addSubview(background)
         container.addSubview(label)
+        container.addSubview(continuation)
         container.addSubview(caretBar)
         panel.contentView = container
         self.panel = panel
@@ -80,9 +87,10 @@ final class SuggestionOverlay {
     @discardableResult
     func showInline(text: String, at caretRect: CGRect, font: NSFont, opacity: Double,
                     color: NSColor? = nil, maxRightX: CGFloat? = nil,
-                    fieldRect: CGRect? = nil) -> Bool {
+                    fieldRect: CGRect? = nil, columnRect: CGRect? = nil) -> Bool {
         guard let panel, !text.isEmpty else { hide(); return true }
         background.isHidden = true
+        continuation.isHidden = true
 
         let ghostColor = (color ?? NSColor.secondaryLabelColor).withAlphaComponent(opacity)
         let padding: CGFloat = 1   // tight against the typed word, like the real text
@@ -91,6 +99,11 @@ final class SuggestionOverlay {
             return showWrapped(text: text, caretRect: caretRect, fieldRect: field,
                                font: font, color: ghostColor, maxRightX: maxRightX,
                                padding: padding, panel: panel)
+        }
+        if let column = columnRect, Self.isSaneFieldRect(column, caretRect: caretRect) {
+            return showSplitWrapped(text: text, caretRect: caretRect, column: column,
+                                    font: font, color: ghostColor, padding: padding,
+                                    panel: panel)
         }
 
         // Legacy single-line path (no reliable field rect).
@@ -186,6 +199,108 @@ final class SuggestionOverlay {
         return true
     }
 
+    /// Wrapping ghost for Electron editors (Obsidian, Notion). Line 1 is a plain
+    /// single-line label starting at the caret, the same placement the legacy
+    /// path uses (exact there). The words that don't fit continue in a second
+    /// label at the text column's left edge, one caret-line pitch below. This
+    /// avoids `firstLineHeadIndent`, which renders at the wrong x in Electron.
+    /// `column` is the editor's content frame (AX top-left global).
+    private func showSplitWrapped(text: String, caretRect: CGRect, column: CGRect,
+                                  font: NSFont, color: NSColor, padding: CGFloat,
+                                  panel: NSPanel) -> Bool {
+        let inset: CGFloat = 6
+        let left = column.minX
+        let right = column.maxX - inset
+        let firstX = caretRect.maxX + padding
+        let columnWidth = right - left
+        guard columnWidth >= 60 else { hide(); return false }
+
+        // Greedy word split: the longest prefix ending at a word boundary that
+        // fits between the caret and the column's right edge.
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        let firstWidth = right - firstX
+        let (head, tail) = Self.splitToFit(text, width: firstWidth, attributes: attrs)
+        guard !(head.isEmpty && tail.isEmpty) else { hide(); return false }
+
+        let pitch = max(caretRect.height, font.ascender + abs(font.descender) + font.leading)
+        let lineHeight = ceil(font.ascender + abs(font.descender) + font.leading)
+        // Nothing may draw below the column (editor frame) bottom.
+        let linesBelow = Int((column.maxY - caretRect.maxY) / pitch)
+        let maxContinuation = min(2, max(0, linesBelow))
+        let wraps = !tail.isEmpty && maxContinuation > 0
+
+        // Line 1 (may be empty when even the first word doesn't fit).
+        label.maximumNumberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        label.stringValue = wraps ? head : text
+        label.font = font
+        label.textColor = color
+
+        var contHeight: CGFloat = 0
+        if wraps {
+            // Glyphs sit at the bottom of a fixed-height line box; raise them to
+            // center in the pitch, matching line 1's vertical centering.
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = .byWordWrapping
+            paragraph.minimumLineHeight = pitch
+            paragraph.maximumLineHeight = pitch
+            continuation.attributedStringValue = NSAttributedString(string: tail, attributes: [
+                .font: font, .foregroundColor: color, .paragraphStyle: paragraph,
+                .baselineOffset: max(0, (pitch - lineHeight) / 2),
+            ])
+            continuation.maximumNumberOfLines = maxContinuation
+            continuation.lineBreakMode = .byTruncatingTail
+            continuation.preferredMaxLayoutWidth = columnWidth
+            contHeight = continuation.sizeThatFits(
+                NSSize(width: columnWidth, height: .greatestFiniteMagnitude)).height
+            contHeight = min(contHeight, CGFloat(maxContinuation) * pitch)
+        }
+
+        // Panel spans the column; line 1 is centered in the caret's line box and
+        // continuation lines follow at the caret-line pitch.
+        let panelTop = caretRect.minY + (caretRect.height - pitch) / 2
+        let panelHeight = pitch + (wraps ? contHeight : 0)
+        let labelWidth = max(0, right - firstX)
+        // Can't wrap and no room on the caret's line — let the caller use the HUD.
+        if !wraps && labelWidth < 30 { hide(); return false }
+        // AppKit container: bottom-left origin.
+        label.frame = CGRect(x: firstX - left, y: panelHeight - pitch + (pitch - lineHeight) / 2,
+                             width: labelWidth, height: lineHeight)
+        if wraps {
+            continuation.frame = CGRect(x: 0, y: 0, width: columnWidth, height: contHeight)
+            continuation.isHidden = false
+        }
+
+        let flippedY = NSScreen.primaryHeight - (panelTop + panelHeight)
+        panel.setFrame(CGRect(x: left, y: flippedY, width: columnWidth, height: panelHeight),
+                       display: true)
+        panel.orderFrontRegardless()
+        return true
+    }
+
+    /// Splits `text` into the longest word-boundary prefix whose rendered width
+    /// fits `width`, and the remainder (leading whitespace dropped). The head is
+    /// empty when not even the first word fits.
+    static func splitToFit(_ text: String, width: CGFloat,
+                           attributes: [NSAttributedString.Key: Any]) -> (String, String) {
+        func fits(_ s: Substring) -> Bool {
+            (String(s) as NSString).size(withAttributes: attributes).width <= width
+        }
+        if fits(text[...]) { return (text, "") }
+        var best = text.startIndex
+        var i = text.startIndex
+        while i < text.endIndex {
+            if text[i].isWhitespace, i > text.startIndex {
+                guard fits(text[..<i]) else { break }
+                best = i
+            }
+            i = text.index(after: i)
+        }
+        let head = String(text[..<best])
+        let tail = String(text[best...].drop(while: \.isWhitespace))
+        return (head, tail)
+    }
+
     // MARK: HUD pill (Electron / Catalyst fallback)
 
     /// Show `text` as a floating pill with a Tab hint, anchored near the bottom of
@@ -193,6 +308,7 @@ final class SuggestionOverlay {
     func showHUD(text: String, windowRect: CGRect?) {
         guard let panel, !text.isEmpty else { hide(); return }
         background.isHidden = false
+        continuation.isHidden = true
 
         label.stringValue = "\(text)   ⇥ Tab"
         label.font = .systemFont(ofSize: 13, weight: .medium)
@@ -230,6 +346,7 @@ final class SuggestionOverlay {
     func showBubble(text: String, above caretRect: CGRect) {
         guard let panel, !text.isEmpty else { hide(); return }
         background.isHidden = false
+        continuation.isHidden = true
 
         label.maximumNumberOfLines = 1
         label.lineBreakMode = .byTruncatingTail
@@ -270,6 +387,7 @@ final class SuggestionOverlay {
                     maxRightX: CGFloat?) {
         guard let panel, !suggestion.isEmpty else { hide(); return }
         background.isHidden = true
+        continuation.isHidden = true
 
         let ghostColor = textColor.withAlphaComponent(ghostOpacity)
 
@@ -325,6 +443,7 @@ final class SuggestionOverlay {
     func hide() {
         panel?.orderOut(nil)
         label.stringValue = ""
+        continuation.isHidden = true
         mirrorBackdrop.isHidden = true
         caretBar.isHidden = true
     }

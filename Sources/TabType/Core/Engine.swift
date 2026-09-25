@@ -1446,6 +1446,11 @@ final class Engine {
             let caretAtEnd = element.map(AccessibilityBridge.caretConfirmedAtEnd) == true
             let fieldRect = (allowWrap && caretAtEnd && !policy.laggyCaret)
                 ? element.flatMap { AccessibilityBridge.elementFrame(of: $0) } : nil
+            // Electron document editors (Obsidian, Notion): wrap via a split
+            // layout instead — line 1 at the caret, the rest at the editor's left
+            // edge (observed to match the text column in Obsidian).
+            let columnRect = (allowWrap && caretAtEnd && policy.laggyCaret && policy.documentProfile)
+                ? element.flatMap { AccessibilityBridge.elementFrame(of: $0) } : nil
             // Clamp the ghost to the text INPUT BOX's right edge, not just the
             // window's — composers are narrower than their windows, and a ghost
             // clamped only to the window spills past the box.
@@ -1468,7 +1473,7 @@ final class Engine {
                     text: suggestion, at: rect, font: useFont,
                     opacity: self.settings.ghostOpacity, color: color,
                     maxRightX: boxRight,
-                    fieldRect: fieldRect)
+                    fieldRect: fieldRect, columnRect: columnRect)
                 if !shown {
                     // No room for even a couple of characters inline — HUD pill.
                     self.overlay.showHUD(text: suggestion, windowRect: windowRect)
@@ -1567,7 +1572,16 @@ final class Engine {
                 // Text mirror (Cotypist's rendering): re-render the typed tail +
                 // suggestion ourselves on a field-matched backdrop — exact tail/ghost
                 // alignment by construction. Needs the probed baseline + colours.
-                if policy.laggyCaret, self.settings.textMirroring,
+                // A suggestion that overflows the line in a wrapping-capable
+                // editor skips the (single-line) mirror and wraps instead.
+                let needsWrap: Bool = {
+                    guard let column = columnRect else { return false }
+                    let right = min(column.maxX - 6, boxRight ?? .greatestFiniteMagnitude)
+                    return !SuggestionOverlay.splitToFit(
+                        suggestion, width: right - (rect.maxX + 1),
+                        attributes: [.font: useFont]).1.isEmpty
+                }()
+                if policy.laggyCaret, self.settings.textMirroring, !needsWrap,
                    let baseline = probedBaseline,
                    let appearance = GhostAppearanceProbe.shared.current {
                     let before = AccessibilityBridge.focusedElement()

@@ -18,7 +18,7 @@ build_scheme() {
     xcrun xcodebuild -scheme TabType -configuration "$CONFIG" \
         -destination 'platform=macOS' \
         -derivedDataPath "$DERIVED" \
-        -skipPackagePluginValidation build
+        -skipPackagePluginValidation -skipMacroValidation build
 }
 
 cmd="${1:-app}"

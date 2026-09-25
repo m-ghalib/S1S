@@ -241,10 +241,13 @@ enum AppPolicyStore {
 
     static func policy(forBundleId id: String?) -> AppPolicy {
         guard let id else { return AppPolicy() }
-        if passwordManagers.contains(id) || terminals.contains(id) {
+        // Password managers stay off regardless of user overrides (safety).
+        if passwordManagers.contains(id) {
             return AppPolicy(isEnabled: false)
         }
         var policy = AppPolicy()
+        // Terminals are off by default, but the user can opt back in per app.
+        if terminals.contains(id) { policy.isEnabled = false }
         if pasteApps.contains(id) { policy.insertionStrategy = .paste }
         if chatApps.contains(id) {
             policy.forceScreenContext = true
