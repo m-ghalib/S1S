@@ -168,44 +168,20 @@ enum AppPolicyStore {
         "com.agilebits.onepassword7", "com.apple.Passwords",
         "com.bitwarden.desktop", "com.dashlane.Dashlane",
         "com.callpod.keepermac", "com.lastpass.LastPass",
-        // https://appcatalog.cloud/apps/proton-pass
-        "me.proton.pass.electron",
-        // https://github.com/keepassxreboot/keepassxc/blob/develop/src/CMakeLists.txt
-        "org.keepassxc.keepassxc",
-        // Current Strongbox editions: https://strongbox.reamaze.com/kb/faqs
+        "me.proton.pass.electron", "org.keepassxc.keepassxc",
         "com.markmcguill.strongbox", "com.markmcguill.strongbox.pro",
-        // Earlier Mac editions: https://doesitarm.com/app/strongbox/
-        "com.markmcguill.strongbox.mac.pro",
-        // https://www.reddit.com/r/strongbox/comments/r347yx
-        "com.markmcguill.strongbox.mac",
-        // https://help.enpass.io/business/latest/google-workspace/deploying-enpass-on-macos
-        "in.sinew.Enpass-Desktop.App",
-        // Earlier Enpass edition: https://doesitarm.com/app/enpass/
-        "in.sinew.Enpass-Desktop",
-        // https://appcatalog.cloud/apps/nordpass
-        "com.nordsec.nordpass",
-        // https://appcatalog.cloud/apps/roboform
-        "com.sibersystems.RoboFormMac",
+        "com.markmcguill.strongbox.mac", "com.markmcguill.strongbox.mac.pro",
+        "in.sinew.Enpass-Desktop", "in.sinew.Enpass-Desktop.App",
+        "com.nordsec.nordpass", "com.sibersystems.RoboFormMac",
     ]
 
     /// Terminals — autocomplete is disruptive; disabled by default.
     private static let terminals: Set<String> = [
         "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable",
         "com.mitchellh.ghostty", "io.alacritty", "net.kovidgoyal.kitty",
-        "com.github.wez.wezterm",
-        // https://github.com/desktop/desktop/blob/development/docs/technical/shell-integration.md
-        "co.zeit.hyper",
-        // https://github.com/Eugeny/tabby/blob/master/electron-builder.yml
-        "org.tabby",
-        // https://github.com/raphamorim/rio/issues/558
-        "com.raphaelamorim.rio",
-        // DMG and App Store editions: https://appcatalog.cloud/apps/termius
-        // https://doesitarm.com/app/termius
-        "com.termius-dmg.mac", "com.termius.mac",
-        // https://github.com/wavetermdev/waveterm/blob/main/package.json
-        "dev.commandline.waveterm",
-        // https://docs.warp.dev/support-and-community/troubleshooting-and-support/logging-out-and-uninstalling
-        "dev.warp.Warp-Preview",
+        "com.github.wez.wezterm", "dev.warp.Warp-Preview",
+        "co.zeit.hyper", "org.tabby", "com.raphaelamorim.rio",
+        "com.termius-dmg.mac", "com.termius.mac", "dev.commandline.waveterm",
     ]
 
     /// Apps that need clipboard paste for reliable insertion.
@@ -215,13 +191,11 @@ enum AppPolicyStore {
         "com.superhuman.electron",
     ]
 
-    /// Chromium browsers — Chrome's paste insertion and font metrics.
-    /// Bundle IDs: https://github.com/apple/password-manager-resources/blob/main/quirks/web-browser-extension-distribution-information.json
-    /// Chromium CFBundleIdentifier: https://chromium.googlesource.com/chromium/reference_builds/chrome_mac/+/171656641186a175df3e658075dffa1cacaf28ab/Chromium.app/Contents/Info.plist
+    /// Chromium browsers — also need clipboard paste, like `pasteApps`.
     private static let chromiumBrowsers: Set<String> = [
-        "com.google.Chrome", "company.thebrowser.Browser", "com.microsoft.edgemac",
-        "com.brave.Browser", "company.thebrowser.dia", "com.vivaldi.Vivaldi",
-        "org.chromium.Chromium",
+        "com.google.Chrome", "company.thebrowser.Browser" /* Arc */,
+        "company.thebrowser.dia", "com.microsoft.edgemac", "com.brave.Browser",
+        "com.vivaldi.Vivaldi", "org.chromium.Chromium",
     ]
 
     /// Code editors: prose autocomplete in the MAIN EDITOR collides with actual
@@ -254,9 +228,7 @@ enum AppPolicyStore {
     /// screen memory is force-enabled here regardless of the global toggle, with a
     /// larger character budget so more transcript survives into the prompt.
     private static let chatApps: Set<String> = [
-        // ChatGPT Classic bundle ID, documented by OpenAI's macOS launcher test:
-        // https://github.com/openai/codex/blob/main/codex-rs/cli/src/desktop_app/mac.rs
-        "com.openai.chat",
+        "com.openai.chat" /* ChatGPT */,
         "com.anthropic.claudefordesktop", "com.tinyspeck.slackmacgap",
         "com.hnc.Discord", "com.apple.MobileSMS", "net.whatsapp.WhatsApp",
         "ru.keepcoder.Telegram", "org.whispersystems.signal-desktop",
@@ -304,10 +276,8 @@ enum AppPolicyStore {
         var policy = AppPolicy()
         // Terminals are off by default, but the user can opt back in per app.
         if terminals.contains(id) { policy.isEnabled = false }
-        if pasteApps.contains(id) { policy.insertionStrategy = .paste }
-        if chromiumBrowsers.contains(id) {
+        if pasteApps.contains(id) || chromiumBrowsers.contains(id) {
             policy.insertionStrategy = .paste
-            policy.fontFactor = 1.0
         }
         if chatApps.contains(id) {
             policy.forceScreenContext = true
@@ -338,10 +308,7 @@ enum AppPolicyStore {
         if markdownEditorApps.contains(id) {
             policy.markdownFilesOnly = true
         }
-        switch id {
-        case "com.apple.Safari": policy.fontFactor = 0.98
-        default: break
-        }
+        if id == "com.apple.Safari" { policy.fontFactor = 0.98 }
         if let o = userOverrides[id] {
             if let e = o.enabled { policy.isEnabled = e }
             if let m = o.midLineEnabled { policy.allowsMidLine = m }

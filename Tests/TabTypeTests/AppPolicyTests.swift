@@ -52,12 +52,8 @@ final class AppPolicyTests: XCTestCase {
     // MARK: - Chromium browsers
 
     func testChromiumBrowsersMatchChromeInsertionAndFontFactor() {
-        let chrome = AppPolicyStore.policy(forBundleId: "com.google.Chrome")
-        XCTAssertEqual(chrome.insertionStrategy, .paste)
-        XCTAssertEqual(chrome.fontFactor, 1.0)
-
         let bundleIDs = [
-            "company.thebrowser.Browser", "com.microsoft.edgemac",
+            "com.google.Chrome", "company.thebrowser.Browser", "com.microsoft.edgemac",
             "com.brave.Browser", "company.thebrowser.dia",
             "com.vivaldi.Vivaldi", "org.chromium.Chromium",
         ]
@@ -135,21 +131,15 @@ final class AppPolicyTests: XCTestCase {
 
     func testPasswordManagersStayDisabledDespiteEnableOverride() {
         let bundleIDs = [
-            "me.proton.pass.electron",
-            "org.keepassxc.keepassxc",
+            "me.proton.pass.electron", "org.keepassxc.keepassxc",
             "com.markmcguill.strongbox", "com.markmcguill.strongbox.pro",
             "com.markmcguill.strongbox.mac", "com.markmcguill.strongbox.mac.pro",
-            "in.sinew.Enpass-Desktop.App", "in.sinew.Enpass-Desktop",
-            "com.nordsec.nordpass",
-            "com.sibersystems.RoboFormMac",
+            "in.sinew.Enpass-Desktop", "in.sinew.Enpass-Desktop.App",
+            "com.nordsec.nordpass", "com.sibersystems.RoboFormMac",
         ]
         for id in bundleIDs {
             XCTAssertFalse(AppPolicyStore.policy(forBundleId: id).isEnabled, id)
-            var override = AppOverride()
-            override.enabled = true
-            AppPolicyStore.userOverrides[id] = override
-            XCTAssertFalse(AppPolicyStore.policy(forBundleId: id).isEnabled, id)
-            AppPolicyStore.userOverrides.removeValue(forKey: id)
+            XCTAssertFalse(policyWithEnableOverride(id).isEnabled, id)
         }
     }
 
@@ -165,15 +155,18 @@ final class AppPolicyTests: XCTestCase {
             let defaultPolicy = AppPolicyStore.policy(forBundleId: id)
             XCTAssertFalse(defaultPolicy.isEnabled, id)
             XCTAssertEqual(defaultPolicy.profile, .disabled, id)
-            var override = AppOverride()
-            override.enabled = true
-            AppPolicyStore.userOverrides[id] = override
-            let enabledPolicy = AppPolicyStore.policy(forBundleId: id)
+            let enabledPolicy = policyWithEnableOverride(id)
             XCTAssertTrue(enabledPolicy.isEnabled, id)
             XCTAssertNotEqual(enabledPolicy.profile, .disabled, id)
-            AppPolicyStore.userOverrides.removeValue(forKey: id)
             XCTAssertFalse(AppPolicyStore.policy(forBundleId: id).isEnabled, id)
         }
+    }
+
+    /// Resolves `id` with a temporary user override that enables it.
+    private func policyWithEnableOverride(_ id: String) -> AppPolicy {
+        AppPolicyStore.userOverrides[id] = AppOverride(enabled: true)
+        defer { AppPolicyStore.userOverrides.removeValue(forKey: id) }
+        return AppPolicyStore.policy(forBundleId: id)
     }
 
     // MARK: - Zed
