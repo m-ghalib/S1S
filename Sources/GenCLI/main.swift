@@ -83,7 +83,12 @@ func trimSuggestion(_ raw: String, maxWords: Int = 7) -> String {
 }
 
 FileHandle.standardError.write("Loading \(modelId) …\n".data(using: .utf8)!)
-let container = try await #huggingFaceLoadModelContainer(configuration: ModelConfiguration(id: modelId)) { p in
+// A local directory (e.g. TabType's model store) loads without downloading.
+var isDirectory: ObjCBool = false
+let configuration = FileManager.default.fileExists(atPath: modelId, isDirectory: &isDirectory) && isDirectory.boolValue
+    ? ModelConfiguration(directory: URL(fileURLWithPath: modelId))
+    : ModelConfiguration(id: modelId)
+let container = try await #huggingFaceLoadModelContainer(configuration: configuration) { p in
     FileHandle.standardError.write("\r\(Int(p.fractionCompleted * 100))%   ".data(using: .utf8)!)
 }
 FileHandle.standardError.write("\nready\n".data(using: .utf8)!)
@@ -199,6 +204,33 @@ if args.contains("--kvtest") {
     }
     print(pass ? "KVTEST PASS" : "KVTEST FAIL")
     exit(pass ? 0 : 1)
+}
+
+// --- GPU buffer-cache growth check ---
+// Usage: [CACHE_LIMIT_MB=512] tabtype-gencli --model <id> --memtest [rounds]
+// Prefills prompts of varying length (like context switches between apps) and
+// prints MLX active/cache memory plus latency. Without CACHE_LIMIT_MB, MLX keeps
+// its default cache limit (the memory limit), which is what TabType ran with
+// before `Predictor.gpuCacheLimit`.
+if let i = args.firstIndex(of: "--memtest") {
+    let rounds = (i + 1 < args.count ? Int(args[i + 1]) : nil) ?? 40
+    if let limitMB = ProcessInfo.processInfo.environment["CACHE_LIMIT_MB"].flatMap(Int.init) {
+        Memory.cacheLimit = limitMB * 1024 * 1024
+    }
+    let mb = { (bytes: Int) in bytes / (1024 * 1024) }
+    let filler = "The quarterly planning review covered hiring, budget, and launch dates for the new release. "
+    var latencies: [Double] = []
+    for r in 0 ..< rounds {
+        // 100…1500 tokens, a different length every round.
+        let prompt = String(repeating: filler, count: 6 + (r * 37) % 80) + "Next we should"
+        let (_, dt) = try await complete(prompt, maxTok: 8)
+        latencies.append(dt)
+        print("round \(r): \(Int(dt * 1000))ms  active \(mb(Memory.activeMemory))MB  cache \(mb(Memory.cacheMemory))MB")
+    }
+    // Round 0 includes warm-up, so leave it out of the average.
+    let avg = latencies.dropFirst().reduce(0, +) / Double(max(1, latencies.count - 1))
+    print("cacheLimit \(mb(Memory.cacheLimit))MB  avg \(Int(avg * 1000))ms  final cache \(mb(Memory.cacheMemory))MB  peak \(mb(Memory.peakMemory))MB")
+    exit(0)
 }
 
 // Warm up.

@@ -15,7 +15,7 @@ DERIVED="$ROOT/.build-xcode"
 PRODUCTS="$DERIVED/Build/Products/$CONFIG"
 
 build_scheme() {
-    xcrun xcodebuild -scheme TabType -configuration "$CONFIG" \
+    xcrun xcodebuild -scheme "${1:-TabType}" -configuration "$CONFIG" \
         -destination 'platform=macOS' \
         -derivedDataPath "$DERIVED" \
         -skipPackagePluginValidation -skipMacroValidation build
@@ -24,7 +24,7 @@ build_scheme() {
 cmd="${1:-app}"
 case "$cmd" in
 gencli)
-    build_scheme
+    build_scheme tabtype-gencli
     echo "Built: $PRODUCTS/tabtype-gencli"
     ;;
 app)

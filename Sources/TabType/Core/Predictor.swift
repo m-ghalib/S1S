@@ -76,8 +76,15 @@ final class Predictor {
     // ~0.5–0.9s typical latency noted in HardwareInfo; a real hang, not just a slow one.
     private let maxConsecutiveTimeouts = 3
 
+    /// Cap on MLX's pool of freed GPU buffers. MLX defaults it to the memory limit
+    /// (1.5× the recommended working set, ~62 GB on a 64 GB Mac), and every prefill
+    /// frees intermediates of a new size, so the pool grew to 16+ GB over a session.
+    /// Decode reuses a handful of same-sized buffers, which this still covers.
+    nonisolated static let gpuCacheLimit = 512 * 1024 * 1024
+
     init(provider: ModelProvider) {
         self.provider = provider
+        Memory.cacheLimit = Self.gpuCacheLimit
     }
 
     /// Whether the currently loaded model is a legacy base model (raw token
@@ -337,6 +344,8 @@ final class Predictor {
                 let genMs = Int(Date().timeIntervalSince(genStart) * 1000)
                 let outTokens = (pc.cache.first?.offset ?? 0) - ids.count
                 Log.shared.debug("gen: \(genMs)ms total (prefill \(suffix.count) + decode \(max(0, outTokens)) tokens)")
+                let mb = { (bytes: Int) in bytes / (1024 * 1024) }
+                Log.shared.debug("gpu mem: active \(mb(Memory.activeMemory))MB, cache \(mb(Memory.cacheMemory))MB, peak \(mb(Memory.peakMemory))MB")
             }
 
             // Trim the generated tokens back off so the cache holds exactly this

@@ -382,3 +382,29 @@ About 77% of requests were deferred. This may be expected with continuous genera
 4. One capture per 15 s is allowed even while the user is typing.
 
 **Verification:** Tested in Claude Desktop on two chats. The prompt contained only conversation text, including the newest reply. The follow-up suggestion used that reply: "consumer doesn't trust AI to make personal decisions".
+
+## TT-017
+
+**GPU memory grows to 20+ GB during a session**
+
+- **Severity:** High
+- **Status:** Fixed (verified with `tabtype-gencli --memtest` and the running app)
+
+**Steps:** Run TabType with `mlx-community/Qwen3-4B-Instruct-2507-8bit` on a 64 GB Mac. Type in several apps for about 15 minutes, so the prompt length changes often.
+
+**Evidence:** `footprint` reported 21 GB for TabType after 14 minutes. Of that, 20.7 GB was `IOAccelerator (graphics)`, which holds MLX Metal buffers. The model weights are 4 GB on disk.
+
+**Cause:** MLX keeps freed GPU buffers in a cache for reuse. The cache limit defaults to the memory limit, which is 1.5 times the recommended working set (62 GB on this Mac). Each prefill of a different prompt length frees intermediate buffers of new sizes, so the cache kept growing. TabType never set a cache limit.
+
+`tabtype-gencli --memtest 40` prefills prompts of 100 to 1,500 tokens:
+
+| Cache limit | Cache after 40 rounds | Active | Average latency |
+|---|---|---|---|
+| Default (62 GB) | 13,218 MB | about 4,100 MB | 2,913 ms |
+| 512 MB | 512 MB | about 4,100 MB | 2,334 ms |
+
+Active memory was the same in both runs, so no arrays leaked. Only the cache grew.
+
+**Fix:** `Predictor.init` sets `Memory.cacheLimit` to `Predictor.gpuCacheLimit` (512 MB). With verbose logging on, each generation logs a `gpu mem:` line with active, cache, and peak memory.
+
+**Verification:** After relaunch, the app footprint was 5.0 GB, and every `gpu mem:` line showed the cache at or below 512 MB. The latency test showed no slowdown. Live typing through computer use was not run because another session held the computer-use lock.
