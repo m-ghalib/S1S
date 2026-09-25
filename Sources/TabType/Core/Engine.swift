@@ -911,7 +911,7 @@ final class Engine {
         }
         let midWord = prefix.last.map { !$0.isWhitespace } ?? false
         let maxK = min(typed.count, restated.count)
-        guard maxK >= 2 else { return suggestion }
+        guard maxK >= 2, let lastTypedWord = typed.last else { return suggestion }
         for k in stride(from: maxK, through: 2, by: -1) {
             let t = typed.suffix(k).map { $0.lowercased() }
             let r = restated.prefix(k).map { suggestion[$0].lowercased() }
@@ -921,7 +921,7 @@ final class Engine {
             else { continue }
             // Cut after the typed part of the last restated word.
             let word = restated[k - 1]
-            let cut = suggestion.index(word.lowerBound, offsetBy: typed[typed.endIndex - 1].count,
+            let cut = suggestion.index(word.lowerBound, offsetBy: lastTypedWord.count,
                                        limitedBy: word.upperBound) ?? word.upperBound
             let rest = String(suggestion[cut...])
             return rest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : rest
