@@ -186,8 +186,8 @@ enum AppPolicyStore {
     ]
     private static let codeEditorBundlePrefixes = ["com.jetbrains."]
 
-    /// Code editors where suggestions are restricted to Markdown (.md) files only;
-    /// the runtime window-title check is performed via `markdownFilesOnly` policy flag.
+    /// Code editors where suggestions are restricted to Markdown (.md) files; the
+    /// Engine checks the focused window's title at runtime (`markdownFilesOnly`).
     private static let markdownEditorApps: Set<String> = ["dev.zed.Zed"]
 
     /// Electron/Chromium apps whose AX caret bounds lag the real caret while
@@ -236,7 +236,7 @@ enum AppPolicyStore {
         "com.apple.TextEdit", "com.lukilabs.lukiapp" /* Craft */,
         "net.shinyfrog.bear", "com.ulyssesapp.mac", "pro.writer.mac" /* iA Writer */,
         "abnerworks.Typora", "com.literatureandlatte.scrivener3",
-        "md.obsidian", "notion.id",
+        "md.obsidian", "notion.id", "dev.zed.Zed",
     ]
 
     static func policy(forBundleId id: String?) -> AppPolicy {
@@ -269,8 +269,6 @@ enum AppPolicyStore {
         }
         if markdownEditorApps.contains(id) {
             policy.markdownFilesOnly = true
-            policy.documentProfile = true
-            policy.inputContextChars = 2000
         }
         switch id {
         case "com.apple.Safari": policy.fontFactor = 0.98

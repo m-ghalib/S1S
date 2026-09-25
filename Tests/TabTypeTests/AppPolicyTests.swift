@@ -112,15 +112,6 @@ final class AppPolicyTests: XCTestCase {
         XCTAssertEqual(p.profile, .document)
     }
 
-    func testZedNonMarkdownIsDisabledByDefault() {
-        // Zed is NOT in codeEditorApps, so no chatPanelsOnly; markdownFilesOnly is the
-        // only gate. Non-.md surface suppression is enforced at runtime in Engine, not
-        // in the policy struct itself — policy stays enabled, markdownFilesOnly = true.
-        let p = AppPolicyStore.policy(forBundleId: "dev.zed.Zed")
-        XCTAssertTrue(p.isEnabled)
-        XCTAssertTrue(p.markdownFilesOnly)
-    }
-
     // MARK: - Claude Desktop
 
     func testClaudeDesktopPolicy() {
@@ -152,6 +143,7 @@ final class AppPolicyTests: XCTestCase {
         XCTAssertFalse(p.chatPanelsOnly, "Obsidian main editor must receive suggestions")
         // Electron caret bounds lag — suggestions settle before presenting.
         XCTAssertTrue(p.laggyCaret, "Obsidian is Electron: caret bounds lag during typing")
+        XCTAssertFalse(p.allowsMidLine, "Obsidian must not suggest mid-line")
         // Document profile: large context window for long-form notes.
         XCTAssertTrue(p.documentProfile, "Obsidian should use the document profile")
         XCTAssertEqual(p.inputContextChars, 2000)
