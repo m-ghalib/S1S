@@ -47,6 +47,30 @@ final class TrimmerAndTypoTests: XCTestCase {
                        "one two three four five six seven eight")
     }
 
+    // MARK: - SuggestionTrimmer token-limit rule
+
+    func testTokenLimitDropsPartialWordAndDanglingHyphen() {
+        XCTAssertEqual(SuggestionTrimmer.trim(" revenue grew by a 12% year-over-", maxWords: 14,
+                                              hitTokenLimit: true),
+                       " revenue grew by a 12%")
+    }
+
+    func testTokenLimitDropsPossiblyCutWord() {
+        XCTAssertEqual(SuggestionTrimmer.trim("we should schedule the quarterly rev", maxWords: 14,
+                                              hitTokenLimit: true),
+                       "we should schedule the quarterly")
+    }
+
+    func testTokenLimitKeepsFinishedSentence() {
+        XCTAssertEqual(SuggestionTrimmer.trim("that works for me.", maxWords: 14, hitTokenLimit: true),
+                       "that works for me.")
+    }
+
+    func testNaturalEndIsNotTrimmed() {
+        XCTAssertEqual(SuggestionTrimmer.trim("a 12% year-over-year", maxWords: 14),
+                       "a 12% year-over-year")
+    }
+
     // MARK: - Engine.typoCheckToken
 
     func testMidWordPartialExtracted() {

@@ -345,7 +345,10 @@ final class Predictor {
             } else {
                 pc.reset()
             }
-            return SuggestionTrimmer.trim(text, maxWords: maxWords)
+            // Stopped by the token budget (not EOS, a newline or the word cap):
+            // the last word may be cut mid-way, e.g. "…a 12% year-over-".
+            let hitTokenLimit = result.tokenIds.count >= maxTokens
+            return SuggestionTrimmer.trim(text, maxWords: maxWords, hitTokenLimit: hitTokenLimit)
         }
     }
 }
@@ -384,11 +387,16 @@ final class StartGuardProcessor: LogitProcessor {
 
 /// Trims a raw continuation into a short, Cotypist-like suggestion.
 enum SuggestionTrimmer {
-    static func trim(_ raw: String, maxWords: Int) -> String? {
+    /// `hitTokenLimit`: generation stopped because it ran out of tokens, so the
+    /// final word may be incomplete and is dropped (unless the text already ended
+    /// at a sentence terminator or was cut back by the word cap).
+    static func trim(_ raw: String, maxWords: Int, hitTokenLimit: Bool = false) -> String? {
         // 1) One line only.
         var s = raw
+        var cutAtNewline = false
         if let nl = s.firstIndex(where: { $0 == "\n" || $0 == "\r" }) {
             s = String(s[..<nl])
+            cutAtNewline = true
         }
         // 2) Cut at the first sentence terminator (keep it) — but only when it
         //    actually ends a sentence: end of text, or a space followed by a new
@@ -404,11 +412,19 @@ enum SuggestionTrimmer {
             }
             searchFrom = next
         }
+        let endsSentence = s.last.map { $0 == "." || $0 == "!" || $0 == "?" } ?? false
         // 3) Cap word count, preserving a leading space if present.
         let leadingSpace = s.first == " " ? " " : ""
         let words = s.split(separator: " ", omittingEmptySubsequences: true)
         if words.count > maxWords {
             s = leadingSpace + words.prefix(maxWords).joined(separator: " ")
+        } else if hitTokenLimit, !cutAtNewline, !endsSentence {
+            // 4) Token budget ran out mid-stream: drop the possibly partial last
+            //    word, then any dangling joiner left in front of it ("over-", "and,").
+            s = leadingSpace + words.dropLast().joined(separator: " ")
+            while let last = s.last, "-–—/,;:(&".contains(last) || last == " " {
+                s.removeLast()
+            }
         }
         let trimmed = s.trimmingCharacters(in: CharacterSet(charactersIn: "\u{0}"))
         // Reject degenerate suggestions (blanks, pure punctuation/underscores).

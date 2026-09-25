@@ -1427,7 +1427,6 @@ final class Engine {
             let font = NSFont(descriptor: base.fontDescriptor,
                               size: base.pointSize * policy.fontFactor) ?? base
             let anchored = caretRect.offsetBy(dx: 0, dy: policy.verticalOffset)
-            Log.shared.debug("placement app=\(AccessibilityBridge.frontmostBundleId() ?? "?") caretRect=\(caretRect) axFont=\(axFont != nil ? "yes(\(axFont!.pointSize)pt)" : "no, using \(base.pointSize)pt heuristic") fontFactor=\(policy.fontFactor) verticalOffset=\(policy.verticalOffset) anchored=\(anchored)")
             // Screenshot-assisted colour so ghost text blends with the field's text.
             var color: NSColor?
             if settings.useScreenshotAppearance {
@@ -1463,6 +1462,10 @@ final class Engine {
                 }
                 return limit
             }()
+            // Info level (not verbose-only) so a misplaced ghost can be diagnosed from
+            // a default log: the caret, the box it sits in, and the wrap indent.
+            let indent = fieldRect.map { max(0, caretRect.maxX - $0.minX) }
+            Log.shared.info("placement app=\(AccessibilityBridge.frontmostBundleId() ?? "?") new=\(isNewSuggestion) caretRect=\(caretRect) fieldRect=\(elementFrame.map { "\($0)" } ?? "nil") wrap=\(fieldRect != nil) firstLineIndent=\(indent.map { String(format: "%.1f", $0) } ?? "n/a") axFont=\(axFont != nil ? "yes(\(axFont!.pointSize)pt)" : "no, using \(base.pointSize)pt heuristic") fontFactor=\(policy.fontFactor) verticalOffset=\(policy.verticalOffset)")
 
             // Paint at a SPECIFIC caret rect and font — the occupancy retry must
             // render at the position it verified, and the ink-band probe may have
@@ -1599,13 +1602,48 @@ final class Engine {
                         backgroundColor: appearance.backgroundColor,
                         ghostOpacity: self.settings.ghostOpacity,
                         maxRightX: boxRight)
-                    return
+                } else {
+                    paint(rect, useFont)
                 }
-                paint(rect, useFont)
+                self.recheckCaretAfterPaint(
+                    suggestion: suggestion,
+                    paintedCaret: target.offsetBy(dx: 0, dy: -policy.verticalOffset),
+                    windowRect: windowRect, policy: policy, allowWrap: allowWrap)
             }
         } else {
             overlay.showHUD(text: suggestion, windowRect: windowRect)
         }
+    }
+
+    /// Re-read the caret shortly after a NEW ghost is painted and redraw if it moved.
+    /// After an instant burst (paste, synthetic typing) the host can publish the text
+    /// before its layout, so the settle-time caret read is still mid-burst and the
+    /// ghost lands short of the real caret. Checking after the paint fixes that
+    /// without delaying the first draw.
+    private func recheckCaretAfterPaint(suggestion: String, paintedCaret: CGRect,
+                                        windowRect: CGRect?, policy: AppPolicy,
+                                        allowWrap: Bool) {
+        Task { [weak self] in
+            var painted = paintedCaret
+            for delay: UInt64 in [300_000_000, 500_000_000] {
+                try? await Task.sleep(nanoseconds: delay)
+                guard let self, self.currentSuggestion == suggestion else { return }
+                guard let fresh = AccessibilityBridge.focusedElement()
+                    .flatMap({ AccessibilityBridge.caretRect(of: $0) }),
+                      Self.caretMoved(from: painted, to: fresh) else { continue }
+                Log.shared.info("placement: caret moved after paint \(painted) -> \(fresh), redrawing")
+                self.present(suggestion: suggestion, inlineCaret: fresh, windowRect: windowRect,
+                             policy: policy, isNewSuggestion: false, allowWrap: allowWrap)
+                painted = fresh
+            }
+        }
+    }
+
+    /// Whether a freshly read caret differs enough from the painted one to redraw.
+    /// Sub-point jitter between AX reads is ignored.
+    nonisolated static func caretMoved(from painted: CGRect, to fresh: CGRect,
+                                       tolerance: CGFloat = 1.5) -> Bool {
+        abs(fresh.maxX - painted.maxX) > tolerance || abs(fresh.minY - painted.minY) > tolerance
     }
 
     // MARK: - Accept / dismiss

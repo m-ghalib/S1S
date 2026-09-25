@@ -133,23 +133,29 @@ enum ModelDownloader {
             try await downloadOne(
                 modelId: modelId, revision: revision, file: file, partial: partial,
                 onBytes: { written in progress(base + written, total) })
-            // Verify before publishing the file under its real name.
-            let got = fileSize(partial) ?? 0
-            if file.size > 0, got < file.size {
-                // KEEP the partial — this is the whole point of the resumable path:
-                // the retry picks up from these bytes instead of starting over.
-                throw Failure.incomplete(file.name, expected: file.size, got: got)
-            }
-            if file.size > 0, got > file.size {
-                try? FileManager.default.removeItem(at: partial)   // unusable
-                throw Failure.corrupt(file.name, expected: file.size, got: got)
-            }
-            try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: partial, to: destination)
+            let got = try publish(file: file, partial: partial, destination: destination)
             completedBytes = base + got
             progress(completedBytes, total)
         }
         progress(total, total)
+    }
+
+    /// Verify a finished `.partial` against the listed size, then move it to its
+    /// real name. Returns the byte count.
+    static func publish(file: RemoteFile, partial: URL, destination: URL) throws -> Int64 {
+        let got = fileSize(partial) ?? 0
+        if file.size > 0, got < file.size {
+            // KEEP the partial — this is the whole point of the resumable path:
+            // the retry picks up from these bytes instead of starting over.
+            throw Failure.incomplete(file.name, expected: file.size, got: got)
+        }
+        if file.size > 0, got > file.size {
+            try? FileManager.default.removeItem(at: partial)   // unusable
+            throw Failure.corrupt(file.name, expected: file.size, got: got)
+        }
+        try? FileManager.default.removeItem(at: destination)
+        try FileManager.default.moveItem(at: partial, to: destination)
+        return got
     }
 
     private static func downloadOne(modelId: String, revision: String, file: RemoteFile,
@@ -181,10 +187,13 @@ enum ModelDownloader {
         try await streamer.run(session: session, request: request)
     }
 
+    /// Reads the size from disk every time. `URL.resourceValues` caches per URL, so
+    /// the `.partial` URL sized at resume start kept reporting that stale size after
+    /// the transfer finished — a false "stopped early" on a full-size file.
     static func fileSize(_ url: URL) -> Int64? {
-        guard let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
-              let size = values.fileSize else { return nil }
-        return Int64(size)
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attrs[.size] as? NSNumber else { return nil }
+        return size.int64Value
     }
 }
 
