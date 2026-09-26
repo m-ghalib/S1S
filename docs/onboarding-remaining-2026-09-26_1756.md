@@ -16,6 +16,20 @@
 - The engine starts only when Accessibility is granted and onboarding is complete. The menu shows "Finish Setup…" until then.
 - `OnboardingFlowTests` (4 tests) covers the catalog shape, persona-specific rounds, required choices and picks, and back navigation.
 
+## Status update (2026-09-26 18:40)
+
+Steps 1–7 below are done. They landed in `21683c6` (feat: personalize suggestions from onboarding picks) and `4ffe395` (tidy). `swift test` passes 121 tests.
+
+The running-app check (step 7) passed with "Collect typing history" off:
+
+- One onboarding run took 144 s, including a relaunch for debugging.
+- The first prompt had the style summary and two onboarding examples.
+- Redo replaced the summary and both examples, kept 17 real accepts, and kept the level at 0.25.
+
+One defect was found: TT-018 in `docs/ISSUES.md`. The onboarding chips do not show which choices are selected.
+
+The sections below describe the work as it was planned before implementation.
+
 ## What remains
 
 The saved profile is not used anywhere yet. Onboarding therefore has no effect on suggestions.

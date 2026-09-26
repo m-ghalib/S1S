@@ -408,3 +408,20 @@ Active memory was the same in both runs, so no arrays leaked. Only the cache gre
 **Fix:** `Predictor.init` sets `Memory.cacheLimit` to `Predictor.gpuCacheLimit` (512 MB). With verbose logging on, each generation logs a `gpu mem:` line with active, cache, and peak memory.
 
 **Verification:** After relaunch, the app footprint was 5.0 GB, and every `gpu mem:` line showed the cache at or below 512 MB. The latency test showed no slowdown. Live typing through computer use was not run because another session held the computer-use lock.
+
+## TT-018
+
+**Onboarding chips do not show which choices are selected**
+
+- **Severity:** Medium
+- **Status:** Open
+
+**Steps:** Delete `onboardingProfile` and launch TabType. Click "Personalize TabType". Click Emails, Engineer, and Concise.
+
+**Evidence:** The clicks register. A temporary log line in the chip action recorded each tap, and "Start quick picks" became enabled after all three groups had a choice. The chips themselves did not change: selected and unselected chips looked the same in the running app. A user cannot see which writing types are on, and clicking a writing type twice silently turns it off again.
+
+**Cause (likely, not confirmed):** `OnboardingView.chip` shows selection only through `.tint(selected ? .accentColor : .secondary)` on a `.bordered` button. On macOS, a non-prominent bordered button does not apply the tint.
+
+**Suggested fix:** Show selection with a style that macOS renders, for example `.borderedProminent` for selected chips, or a checkmark next to the title. The `.isSelected` accessibility trait is already set.
+
+**Verification note:** Found while verifying onboarding personalization through computer use. Computer use cannot request TabType, because it is a menu-bar (`.accessory`) app. The test used a temporary, uncommitted patch that launched TabType with the `.regular` activation policy.
