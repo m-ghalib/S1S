@@ -238,11 +238,10 @@ struct PersonalizationPane: View {
                     HStack {
                         Text("Personalize word choice")
                         Slider(value: $settings.personalizeWordChoice, in: 0...1, step: 0.05)
-                            .disabled(!settings.collectTypingHistory)
                         Text(settings.personalizeWordChoice == 0 ? "Off" : String(format: "%.0f%%", settings.personalizeWordChoice * 100))
                             .monospacedDigit().foregroundStyle(.secondary).frame(width: 40, alignment: .trailing)
                     }
-                    Text("Uses your typing history to slightly favor the words and phrases you use often. Subtle at lower values; too high may occasionally suggest a less fitting word.")
+                    Text("Shows the model examples of your writing: your onboarding picks at first, then completions you accept. With typing history on, it also favors words you use often. Higher values use more examples; too high may occasionally suggest a less fitting word.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 // Kept in a subview so TypingHistoryStore.shared (which reads the
@@ -250,6 +249,17 @@ struct PersonalizationPane: View {
                 if settings.collectTypingHistory || TypingHistoryStore.historyFileExists {
                     HistoryDataRow(showingDeleteConfirm: $showingDeleteConfirm)
                 }
+            }
+            Section("Onboarding") {
+                HStack {
+                    Text("Redo the writing-style picks from first-run setup.")
+                    Spacer()
+                    Button("Redo Onboarding…") {
+                        NotificationCenter.default.post(name: .tabTypeRedoOnboarding, object: nil)
+                    }
+                }
+                Text("Replaces your earlier choices, the writing style below, and the onboarding examples. Completions you accepted are kept.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 HStack {
@@ -301,10 +311,19 @@ private struct HistoryDataRow: View {
     var body: some View {
         LabeledContent("Existing data") {
             Button("Delete All…", role: .destructive) { showingDeleteConfirm = true }
-                .disabled(history.entryCount == 0)
+                .disabled(history.entryCount == 0 && history.pairCount == 0)
         }
-        Text(history.entryCount == 0 ? "No inputs have been collected yet." : "\(history.entryCount) snippet\(history.entryCount == 1 ? "" : "s") stored locally.")
-            .font(.caption).foregroundStyle(.secondary)
+        Text(summary).font(.caption).foregroundStyle(.secondary)
+    }
+
+    private var summary: String {
+        func plural(_ n: Int, _ noun: String) -> String { "\(n) \(noun)\(n == 1 ? "" : "s")" }
+        switch (history.entryCount, history.pairCount) {
+        case (0, 0): return "No inputs have been collected yet."
+        case (let e, 0): return "\(plural(e, "snippet")) stored locally."
+        case (0, let p): return "\(plural(p, "example")) stored locally."
+        case (let e, let p): return "\(plural(e, "snippet")) and \(plural(p, "example")) stored locally."
+        }
     }
 }
 

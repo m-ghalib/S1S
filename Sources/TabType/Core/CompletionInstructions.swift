@@ -5,14 +5,15 @@ import Foundation
 /// running an instruct-tuned model via a chat template). Kept in one place so the two
 /// engines can't drift apart.
 enum CompletionInstructions {
-    /// Full system prompt: the static base plus up to 2 examples drawn from the
-    /// user's own recently ACCEPTED completions — the model sees this author's real
-    /// register instead of only generic examples ("sounds like you"). Examples
-    /// change only on accept, so the KV prefix cache stays warm between keystrokes.
+    /// Full system prompt: the static base plus personal examples — the user's
+    /// onboarding picks and recently ACCEPTED completions — so the model sees this
+    /// author's real register instead of only generic examples ("sounds like you").
+    /// The caller caps the count (`AcceptPairSet.exampleLimit`). Examples change
+    /// only on accept or onboarding, so the KV prefix cache stays warm.
     static func system(personalExamples: [TypingHistoryStore.AcceptPair]) -> String {
         guard !personalExamples.isEmpty else { return system }
-        var s = system + "\n\nRecent continuations this author accepted (match their voice):"
-        for pair in personalExamples.suffix(2) {
+        var s = system + "\n\nContinuations this author chose (match their voice):"
+        for pair in personalExamples {
             s += "\nInput: \(pair.prefixTail)\nOutput: \(pair.accepted)"
         }
         return s

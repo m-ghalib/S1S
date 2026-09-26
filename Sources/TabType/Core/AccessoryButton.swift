@@ -2,6 +2,7 @@ import AppKit
 
 extension Notification.Name {
     static let tabTypeOpenSettings = Notification.Name("tabTypeOpenSettings")
+    static let tabTypeRedoOnboarding = Notification.Name("tabTypeRedoOnboarding")
 }
 
 /// A small floating button shown near the focused window that opens the TabType menu,

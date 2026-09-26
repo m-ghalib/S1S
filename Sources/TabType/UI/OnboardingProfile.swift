@@ -241,3 +241,87 @@ struct OnboardingFlow {
                                  tone: tone, completionPicks: picks)
     }
 }
+
+/// Turns a finished onboarding profile into the settings and stored pairs that
+/// personalize suggestions. Pure, so `swift test` covers it.
+enum OnboardingPersonalization {
+    /// Personalization level set by first-run onboarding.
+    static let initialLevel = 0.25
+
+    struct Outcome: Equatable {
+        let writingStyle: String
+        let personalizationLevel: Double
+        let pairs: [TypingHistoryStore.AcceptPair]
+    }
+
+    /// Returns nil for an incomplete profile. `currentLevel` is the slider value
+    /// before a redo (nil on first run): a redo keeps the user's level, even Off.
+    static func outcome(for profile: OnboardingProfile, currentLevel: Double? = nil) -> Outcome? {
+        guard !profile.writingTypes.isEmpty,
+              profile.completionPicks.count == OnboardingCatalog.roundCount else { return nil }
+        return Outcome(writingStyle: styleSummary(for: profile),
+                       personalizationLevel: currentLevel ?? initialLevel,
+                       pairs: pairs(for: profile))
+    }
+
+    /// Each completion pick becomes one onboarding few-shot pair.
+    static func pairs(for profile: OnboardingProfile) -> [TypingHistoryStore.AcceptPair] {
+        profile.completionPicks.map {
+            .init(prefixTail: $0.prefix, accepted: $0.ending, source: .onboarding)
+        }
+    }
+
+    /// A short style description for `AppSettings.writingStyle`, e.g. "concise
+    /// tone; writes as an engineer, mostly emails; prefers short endings (about 5
+    /// words); mostly formal; avoids emoji; avoids exclamation marks".
+    static func styleSummary(for profile: OnboardingProfile) -> String {
+        let endings = profile.completionPicks.map(\.ending)
+        guard !endings.isEmpty else { return "" }
+        var parts = ["\(profile.tone.rawValue.lowercased()) tone"]
+
+        let kinds = profile.writingTypes.map { $0.rawValue.lowercased() }
+        var who = profile.profession == .other ? "" : "writes as \(article(profile.profession.rawValue))"
+        if !kinds.isEmpty {
+            let list = kinds.count > 1
+                ? kinds.dropLast().joined(separator: ", ") + " and " + kinds.last!
+                : kinds[0]
+            who += who.isEmpty ? "writes mostly \(list)" : ", mostly \(list)"
+        }
+        parts.append(who)
+
+        let words = endings.map { $0.split(whereSeparator: \.isWhitespace).count }
+        let average = Int((Double(words.reduce(0, +)) / Double(words.count)).rounded())
+        let length = average <= 4 ? "short" : average <= 9 ? "medium-length" : "long"
+        parts.append("prefers \(length) endings (about \(average) words)")
+
+        let casual = endings.filter { hasEmoji($0) || $0.contains("!") || hasContraction($0) }.count
+        let formalShare = 1 - Double(casual) / Double(endings.count)
+        parts.append(formalShare >= 0.75 ? "mostly formal" : formalShare <= 0.4 ? "casual" : "mixes formal and casual")
+
+        parts.append(frequency(of: endings.filter(hasEmoji).count, total: endings.count, noun: "emoji"))
+        parts.append(frequency(of: endings.filter { $0.contains("!") }.count, total: endings.count,
+                               noun: "exclamation marks"))
+        return parts.joined(separator: "; ")
+    }
+
+    private static func frequency(of count: Int, total: Int, noun: String) -> String {
+        switch count {
+        case 0: return "avoids \(noun)"
+        case ...max(1, total / 4): return "rarely uses \(noun)"
+        default: return "often uses \(noun)"
+        }
+    }
+
+    private static func article(_ role: String) -> String {
+        let lower = role.lowercased()
+        return ("aeiou".contains(lower.first ?? "x") ? "an " : "a ") + lower
+    }
+
+    static func hasEmoji(_ text: String) -> Bool {
+        text.unicodeScalars.contains { $0.properties.isEmojiPresentation }
+    }
+
+    private static func hasContraction(_ text: String) -> Bool {
+        text.range(of: #"[A-Za-z]['’](ll|s|re|ve|d|m|t)\b"#, options: .regularExpression) != nil
+    }
+}

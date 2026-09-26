@@ -12,12 +12,34 @@ final class TypingHistoryStore: ObservableObject {
     static let shared = TypingHistoryStore()
 
     @Published private(set) var entryCount = 0
+    /// Stored few-shot pairs (onboarding picks and real accepts).
+    @Published private(set) var pairCount = 0
 
     /// One accepted completion, with the text that preceded it — used as a
     /// personal few-shot example so the model sees the user's own register.
-    struct AcceptPair: Codable, Sendable {
+    struct AcceptPair: Codable, Sendable, Equatable {
+        /// Where a pair came from. Onboarding pairs are the user's completion picks
+        /// from first-run setup; they are kept apart from real accepts so redo can
+        /// replace them and real accepts can take their place in the prompt.
+        enum Source: String, Codable, Sendable { case accepted, onboarding }
+
         var prefixTail: String
         var accepted: String
+        var source: Source = .accepted
+
+        init(prefixTail: String, accepted: String, source: Source = .accepted) {
+            self.prefixTail = prefixTail
+            self.accepted = accepted
+            self.source = source
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            prefixTail = try c.decode(String.self, forKey: .prefixTail)
+            accepted = try c.decode(String.self, forKey: .accepted)
+            // Snapshots written before `source` existed hold only real accepts.
+            source = try c.decodeIfPresent(Source.self, forKey: .source) ?? .accepted
+        }
     }
 
     private struct Snapshot: Codable {
@@ -26,9 +48,8 @@ final class TypingHistoryStore: ObservableObject {
     }
 
     private var entries: [String] = []
-    private var accepts: [AcceptPair] = []
+    private var pairs = AcceptPairSet()
     private let maxEntries = 500
-    private let maxAccepts = 50
     private let fileURL: URL
     private let keyURL: URL
 
@@ -104,25 +125,31 @@ final class TypingHistoryStore: ObservableObject {
     /// Record an accepted completion with its preceding text, for personal
     /// few-shot examples.
     func recordAccept(prefixTail: String, accepted: String) {
-        let p = prefixTail.trimmingCharacters(in: .whitespacesAndNewlines)
-        let a = accepted.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !p.isEmpty, !a.isEmpty else { return }
-        accepts.append(AcceptPair(prefixTail: String(p.suffix(80)), accepted: String(a.prefix(80))))
-        if accepts.count > maxAccepts { accepts.removeFirst(accepts.count - maxAccepts) }
+        guard pairs.recordAccept(prefixTail: prefixTail, accepted: accepted) else { return }
+        pairCount = pairs.all.count
         persist()
     }
 
-    var acceptCount: Int { accepts.count }
+    /// Replace the onboarding pairs with a new set, keeping real accepts. Called
+    /// on onboarding completion and redo, whether or not collection is on:
+    /// finishing the picks is consent to store them.
+    func replaceOnboardingPairs(_ newPairs: [AcceptPair]) {
+        pairs.replaceOnboarding(with: newPairs)
+        pairCount = pairs.all.count
+        persist()
+    }
 
-    /// The most recent accepted pairs, newest last.
-    func recentAccepts(limit: Int) -> [AcceptPair] {
-        Array(accepts.suffix(limit))
+    /// Few-shot examples for the prompt at the given personalization level. Real
+    /// accepts count only when `includeRealAccepts` (typing history collection).
+    func fewShotExamples(level: Double, includeRealAccepts: Bool) -> [AcceptPair] {
+        pairs.fewShotExamples(level: level, includeRealAccepts: includeRealAccepts)
     }
 
     func deleteAll() {
         entries = []
-        accepts = []
+        pairs = AcceptPairSet()
         entryCount = 0
+        pairCount = 0
         try? FileManager.default.removeItem(at: fileURL)
     }
 
@@ -162,7 +189,7 @@ final class TypingHistoryStore: ObservableObject {
 
     private func persist() {
         guard let key = encryptionKey(),
-              let data = try? JSONEncoder().encode(Snapshot(entries: entries, accepts: accepts)),
+              let data = try? JSONEncoder().encode(Snapshot(entries: entries, accepts: pairs.all)),
               let sealed = try? AES.GCM.seal(data, using: key).combined
         else { return }
         try? sealed.write(to: fileURL, options: .atomic)
@@ -176,11 +203,12 @@ final class TypingHistoryStore: ObservableObject {
         else { return }
         if let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data) {
             entries = snapshot.entries
-            accepts = snapshot.accepts
+            pairs = AcceptPairSet(snapshot.accepts)
         } else if let legacy = try? JSONDecoder().decode([String].self, from: data) {
             entries = legacy   // pre-accepts schema
         }
         entryCount = entries.count
+        pairCount = pairs.all.count
     }
 
     // MARK: - Encryption key (file-based)
@@ -204,5 +232,57 @@ final class TypingHistoryStore: ObservableObject {
             return nil
         }
         return key
+    }
+}
+
+/// Real accepts and onboarding pairs, held apart. Pure value logic so the
+/// onboarding rules run under `swift test` without the encrypted store.
+struct AcceptPairSet: Equatable {
+    typealias Pair = TypingHistoryStore.AcceptPair
+
+    static let maxAccepts = 50
+
+    private(set) var real: [Pair] = []
+    private(set) var onboarding: [Pair] = []
+
+    init() {}
+
+    init(_ all: [Pair]) {
+        real = all.filter { $0.source == .accepted }
+        onboarding = all.filter { $0.source == .onboarding }
+    }
+
+    /// Stored order: onboarding pairs first, then real accepts oldest→newest.
+    var all: [Pair] { onboarding + real }
+
+    /// Append one real accept. Returns false when either side is empty.
+    @discardableResult
+    mutating func recordAccept(prefixTail: String, accepted: String) -> Bool {
+        let p = prefixTail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let a = accepted.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !p.isEmpty, !a.isEmpty else { return false }
+        real.append(Pair(prefixTail: String(p.suffix(80)), accepted: String(a.prefix(80))))
+        if real.count > Self.maxAccepts { real.removeFirst(real.count - Self.maxAccepts) }
+        return true
+    }
+
+    mutating func replaceOnboarding(with pairs: [Pair]) {
+        onboarding = pairs.map { Pair(prefixTail: $0.prefixTail, accepted: $0.accepted, source: .onboarding) }
+    }
+
+    /// How many few-shot pairs the prompt carries at a personalization level:
+    /// none when off, 2 at the post-onboarding default of 0.25, one more per
+    /// further quarter step, capped at 4.
+    static func exampleLimit(level: Double) -> Int {
+        guard level > 0 else { return 0 }
+        return min(4, max(1, 2 + Int(((level - 0.25) * 4).rounded(.down))))
+    }
+
+    /// The newest real accepts fill the slots first; onboarding pairs fill what is
+    /// left, so each real accept displaces one onboarding pair. Oldest→newest.
+    func fewShotExamples(level: Double, includeRealAccepts: Bool) -> [Pair] {
+        let limit = Self.exampleLimit(level: level)
+        let realPicked = includeRealAccepts ? Array(real.suffix(limit)) : []
+        return Array(onboarding.prefix(limit - realPicked.count)) + realPicked
     }
 }

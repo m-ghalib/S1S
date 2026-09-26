@@ -44,6 +44,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             forName: .tabTypeOpenSettings, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.openSettings() }
         }
+        // Settings > Personalization → redo onboarding.
+        NotificationCenter.default.addObserver(
+            forName: .tabTypeRedoOnboarding, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.presentOnboarding(requiresProfile: true) }
+        }
 
         // Apply the "disable macOS predictive text" preference.
         applyMacOSPredictiveText()
@@ -305,14 +310,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     @objc private func showOnboarding() {
+        presentOnboarding(requiresProfile: !settings.hasCompletedOnboarding)
+    }
+
+    /// `requiresProfile` forces the personalization flow, as redo needs. A redo
+    /// starts from a fresh window so no earlier picks carry over.
+    private func presentOnboarding(requiresProfile: Bool) {
+        if requiresProfile && settings.hasCompletedOnboarding {
+            onboardingWindow?.close()
+            onboardingWindow = nil
+        }
         if onboardingWindow == nil {
             let view = OnboardingView(
-                requiresProfile: !settings.hasCompletedOnboarding,
+                requiresProfile: requiresProfile,
                 onGrant: { AccessibilityBridge.requestTrust() },
                 onGrantScreen: { _ = ScreenContextProvider.shared.requestPermission() },
                 onDone: { [weak self] profile in
                     guard let self else { return }
-                    if let profile { self.settings.completeOnboarding(profile) }
+                    if let profile {
+                        self.settings.completeOnboarding(profile)
+                        // The persona and examples changed; re-cache the prompt head.
+                        if self.provider.isReady { self.engine.warmUpModel() }
+                    }
                     guard self.settings.hasCompletedOnboarding else { return }
                     self.rebuildMenu()
                     self.finishOnboardingIfReady()

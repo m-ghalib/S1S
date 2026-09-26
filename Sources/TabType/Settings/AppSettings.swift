@@ -121,9 +121,17 @@ final class AppSettings: ObservableObject {
     }
     var hasCompletedOnboarding: Bool { onboardingProfile != nil }
 
+    /// Saves the profile and applies it: style summary, personalization level, and
+    /// onboarding pairs. On redo this replaces the previous choices, summary, and
+    /// onboarding pairs; real accepts stay.
     func completeOnboarding(_ profile: OnboardingProfile) {
-        guard !profile.writingTypes.isEmpty, profile.completionPicks.count == OnboardingCatalog.roundCount else { return }
+        let currentLevel = hasCompletedOnboarding ? personalizeWordChoice : nil
+        guard let outcome = OnboardingPersonalization.outcome(for: profile, currentLevel: currentLevel)
+        else { return }
         onboardingProfile = profile
+        writingStyle = outcome.writingStyle
+        personalizeWordChoice = outcome.personalizationLevel
+        TypingHistoryStore.shared.replaceOnboardingPairs(outcome.pairs)
     }
 
     @Published var authorName: String { didSet { defaults.set(authorName, forKey: Keys.authorName) } }
@@ -141,8 +149,11 @@ final class AppSettings: ObservableObject {
     @Published var storeInputsWithoutAcceptedCompletions: Bool {
         didSet { defaults.set(storeInputsWithoutAcceptedCompletions, forKey: Keys.storeInputsWithoutAcceptedCompletions) }
     }
-    /// 0 (off) ... 1 (max): how much stored typing history nudges word choice toward
-    /// words you use often. Subtle at low values.
+    /// 0 (off) ... 1 (max): how strongly personal data shapes suggestions. The level
+    /// sets how many personal few-shot pairs the prompt carries (onboarding picks,
+    /// displaced by real accepts; see `AcceptPairSet.exampleLimit`) and, once typing
+    /// history exists, how many often-used words are hinted. So its effect grows
+    /// with the data available. Onboarding sets it to 0.25.
     @Published var personalizeWordChoice: Double {
         didSet { defaults.set(personalizeWordChoice, forKey: Keys.personalizeWordChoice) }
     }
@@ -162,26 +173,36 @@ final class AppSettings: ObservableObject {
 
     /// A short persona preface composed from personalization settings (may be empty).
     var personaPreface: String {
+        // Subtle at low slider values, more pronounced near the top — a short list
+        // of frequently-used words nudges the model's word choice without any deep
+        // sampling/logit changes.
+        let words = collectTypingHistory && personalizeWordChoice > 0
+            ? TypingHistoryStore.shared.topWords(limit: Int(personalizeWordChoice * 12)) : []
+        return Self.personaPreface(name: authorName, style: writingStyle,
+                                   notes: customInstructions, topWords: words)
+    }
+
+    nonisolated static func personaPreface(name: String, style: String, notes: String, topWords: [String]) -> String {
         var parts: [String] = []
-        let name = authorName.trimmingCharacters(in: .whitespaces)
-        let style = writingStyle.trimmingCharacters(in: .whitespaces)
-        let notes = customInstructions.trimmingCharacters(in: .whitespaces)
+        let name = name.trimmingCharacters(in: .whitespaces)
+        let style = style.trimmingCharacters(in: .whitespaces)
+        let notes = notes.trimmingCharacters(in: .whitespaces)
         if !name.isEmpty { parts.append("The writer is \(name).") }
         if !style.isEmpty { parts.append("Writing style: \(style).") }
         if !notes.isEmpty { parts.append(notes) }
-        if collectTypingHistory, personalizeWordChoice > 0 {
-            // Subtle at low slider values, more pronounced near the top — a short
-            // list of frequently-used words nudges the model's word choice without
-            // any deep sampling/logit changes.
-            let limit = max(0, Int(personalizeWordChoice * 12))
-            let words = TypingHistoryStore.shared.topWords(limit: limit)
-            // A 1-2 word "hint" is pure steering noise for a small model — only
-            // include the sentence once there's a real signal.
-            if words.count >= 3 {
-                parts.append("Words this person uses often: \(words.joined(separator: ", ")).")
-            }
+        // A 1-2 word "hint" is pure steering noise for a small model — only include
+        // the sentence once there's a real signal.
+        if topWords.count >= 3 {
+            parts.append("Words this person uses often: \(topWords.joined(separator: ", ")).")
         }
         return parts.joined(separator: " ")
+    }
+
+    /// Personal few-shot pairs for the prompt. Onboarding pairs apply even with
+    /// collection off; real accepts only while collection is on.
+    var personalExamples: [TypingHistoryStore.AcceptPair] {
+        TypingHistoryStore.shared.fewShotExamples(level: personalizeWordChoice,
+                                                  includeRealAccepts: collectTypingHistory)
     }
     /// Write verbose diagnostics to the log file.
     @Published var verboseLog: Bool {

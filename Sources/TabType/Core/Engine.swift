@@ -320,9 +320,7 @@ final class Engine {
             let key = (bid ?? "") + "|" + String(screen.hashValue)
             guard key != self.lastPrewarmKey else { return }   // context unchanged
             self.lastPrewarmKey = key
-            let personalExamples: [TypingHistoryStore.AcceptPair] =
-                (self.settings.collectTypingHistory && TypingHistoryStore.shared.acceptCount >= 5)
-                ? TypingHistoryStore.shared.recentAccepts(limit: 2) : []
+            let personalExamples = self.settings.personalExamples
             let previousWriting: [String] = self.settings.collectTypingHistory
                 ? TypingHistoryStore.shared.contextSamples(budget: 350) : []
             let recentMessages = bid.flatMap { self.recentInputs[$0] } ?? []
@@ -415,9 +413,7 @@ final class Engine {
     /// Warm the model's KV prefix cache with the static prompt head (system prompt
     /// + chat template + persona) so the first real suggestion skips that prefill.
     func warmUpModel() {
-        let personalExamples: [TypingHistoryStore.AcceptPair] =
-            (settings.collectTypingHistory && TypingHistoryStore.shared.acceptCount >= 5)
-            ? TypingHistoryStore.shared.recentAccepts(limit: 2) : []
+        let personalExamples = settings.personalExamples
         let req = CompletionRequest(
             beforeCursor: "Hello", afterCursor: "", screenContext: "", clipboard: "",
             persona: settings.personaPreface, personalExamples: personalExamples,
@@ -1250,10 +1246,8 @@ final class Engine {
         let persona = policy.customInstructions.isEmpty
             ? settings.personaPreface
             : settings.personaPreface + " " + policy.customInstructions
-        // Personal few-shot: only once there's real signal (≥5 accepts).
-        let personalExamples: [TypingHistoryStore.AcceptPair] =
-            (settings.collectTypingHistory && TypingHistoryStore.shared.acceptCount >= 5)
-            ? TypingHistoryStore.shared.recentAccepts(limit: 2) : []
+        // Personal few-shot: onboarding picks, displaced by real accepts.
+        let personalExamples = settings.personalExamples
         // The author's own recent writing — the strongest voice/topic context.
         let previousWriting: [String] = settings.collectTypingHistory
             ? TypingHistoryStore.shared.contextSamples(budget: 350) : []
@@ -1283,6 +1277,8 @@ final class Engine {
         if settings.verboseLog {
             let fullPrompt = PromptBuilder.body(req, cap: PromptBuilder.defaultCap)
             Log.shared.debug("predict full prompt:\n---\n\(fullPrompt)\n---")
+            let examples = personalExamples.map { "\($0.source.rawValue): \($0.prefixTail) → \($0.accepted)" }
+            Log.shared.debug("predict personal examples (\(examples.count)): \(examples.joined(separator: " | "))")
         }
         let startedAt = DispatchTime.now()
 
