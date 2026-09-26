@@ -2,15 +2,39 @@ import Combine
 import SwiftUI
 
 struct OnboardingView: View {
+    let requiresProfile: Bool
     let onGrant: () -> Void
     let onGrantScreen: () -> Void
-    let onDone: () -> Void
+    let onDone: (OnboardingProfile?) -> Void
 
     @State private var trusted = AccessibilityBridge.isTrusted()
     @State private var screenOK = ScreenContextProvider.shared.hasPermission()
+    @State private var showChoices = false
+    @State private var profileFinished = false
+    @State private var flow = OnboardingFlow()
     private let poll = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
+    private var needsProfile: Bool { requiresProfile && !profileFinished }
+
     var body: some View {
+        VStack(spacing: 16) {
+            if !showChoices {
+                welcome
+            } else if flow.isPicking {
+                pickPage
+            } else {
+                choicesPage
+            }
+        }
+        .frame(width: 580, height: 530)
+        .padding()
+        .onReceive(poll) { _ in
+            trusted = AccessibilityBridge.isTrusted()
+            screenOK = ScreenContextProvider.shared.hasPermission()
+        }
+    }
+
+    private var welcome: some View {
         VStack(spacing: 16) {
             Image(systemName: "text.cursor")
                 .font(.system(size: 40))
@@ -41,18 +65,124 @@ struct OnboardingView: View {
                 buttonTitle: "Grant Screen Recording",
                 action: onGrantScreen)
 
-            Button("Get Started") { onDone() }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!trusted)
-                .padding(.top, 4)
-                .padding(.bottom, 8)
+            if profileFinished && !trusted {
+                Text("Personalization complete. Grant Accessibility to start suggestions.")
+                    .font(.callout)
+            }
+            Spacer(minLength: 0)
+            Button(needsProfile ? "Personalize TabType" : "Get Started") {
+                if needsProfile { showChoices = true }
+                else { onDone(nil) }
+            }
+            .keyboardShortcut(.defaultAction)
+            // Let first-run personalization finish even while macOS permission
+            // is pending. AppDelegate still gates the engine on both steps.
+            .disabled(!trusted && !needsProfile)
+            .padding(.bottom, 8)
         }
-        .frame(width: 460)
-        .padding()
-        .onReceive(poll) { _ in
-            trusted = AccessibilityBridge.isTrusted()
-            screenOK = ScreenContextProvider.shared.hasPermission()
+    }
+
+    private var choicesPage: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Make suggestions sound like you").font(.title2).bold()
+            Text("Choose a few things you write, your role, and a tone. Then pick the endings you prefer. No typing needed; about two minutes.")
+                .font(.callout).foregroundStyle(.secondary)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    chipSection("What do you write? Select any.", columns: 3) {
+                        ForEach(WritingType.allCases) { type in
+                            chip(type.rawValue, selected: flow.writingTypes.contains(type)) {
+                                flow.toggle(type)
+                            }
+                        }
+                    }
+                    chipSection("Your profession or role", columns: 4) {
+                        ForEach(Profession.allCases) { role in
+                            chip(role.rawValue, selected: flow.profession == role) {
+                                flow.profession = role
+                            }
+                        }
+                    }
+                    chipSection("Preferred tone", columns: 3) {
+                        ForEach(WritingTone.allCases) { tone in
+                            chip(tone.rawValue, selected: flow.tone == tone) {
+                                flow.tone = tone
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+
+            HStack {
+                Button("Back") { showChoices = false }
+                Spacer()
+                Button("Start quick picks") { flow.begin() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!flow.canBegin)
+            }
         }
+        .padding(.horizontal, 12)
+    }
+
+    private var pickPage: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Choose how you'd finish this").font(.title2).bold()
+            Text("Pick \(flow.roundIndex + 1) of \(flow.rounds.count)")
+                .font(.callout).foregroundStyle(.secondary)
+            ProgressView(value: Double(flow.roundIndex), total: Double(flow.rounds.count))
+
+            if let round = flow.currentRound {
+                Text("“\(round.prefix)…”")
+                    .font(.title3).fontWeight(.medium)
+                    .padding(.vertical, 14)
+                    .accessibilityIdentifier("onboardingPrefix")
+
+                VStack(spacing: 10) {
+                    ForEach(round.endings.indices, id: \.self) { index in
+                        Button {
+                            if let profile = flow.choose(index) {
+                                profileFinished = true
+                                showChoices = false
+                                onDone(profile)
+                            }
+                        } label: {
+                            HStack {
+                                Text(round.endings[index])
+                                    .multilineTextAlignment(.leading)
+                                Spacer()
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("onboardingEnding\(index)")
+                    }
+                }
+            }
+            Spacer()
+            Button("Back") { flow.back() }
+        }
+        .padding(.horizontal, 12)
+    }
+
+    private func chipSection<Chips: View>(_ title: String, columns: Int,
+                                          @ViewBuilder chips: () -> Chips) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: columns),
+                      spacing: 8, content: chips)
+        }
+    }
+
+    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(.callout).frame(maxWidth: .infinity, minHeight: 28)
+        }
+        .buttonStyle(.bordered)
+        .tint(selected ? .accentColor : .secondary)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 
     @ViewBuilder

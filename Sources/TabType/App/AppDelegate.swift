@@ -80,12 +80,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             ScreenContextProvider.shared.selfTest()
         }
 
-        // Gate on Accessibility permission.
-        if AccessibilityBridge.isTrusted() {
+        // First-run choices and Accessibility are both required before the engine starts.
+        if AccessibilityBridge.isTrusted() && settings.hasCompletedOnboarding {
             _ = engine.start()
         } else {
             showOnboarding()
-            waitForTrustThenStart()
+            if !AccessibilityBridge.isTrusted() { waitForTrustThenStart() }
         }
     }
 
@@ -152,9 +152,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.addItem(item("Settings…", icon: "gearshape", action: #selector(openSettings), key: ","))
         menu.addItem(item("Statistics", icon: "chart.bar", action: #selector(openStatistics)))
 
-        if !AccessibilityBridge.isTrusted() {
-            menu.addItem(item("Grant Accessibility Permission…", icon: "exclamationmark.triangle",
-                              action: #selector(showOnboarding)))
+        if !AccessibilityBridge.isTrusted() || !settings.hasCompletedOnboarding {
+            let setupTitle = settings.hasCompletedOnboarding ? "Grant Accessibility Permission…" : "Finish Setup…"
+            menu.addItem(item(setupTitle, icon: "exclamationmark.triangle", action: #selector(showOnboarding)))
         }
 
         menu.addItem(.separator())
@@ -307,21 +307,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     @objc private func showOnboarding() {
         if onboardingWindow == nil {
             let view = OnboardingView(
+                requiresProfile: !settings.hasCompletedOnboarding,
                 onGrant: { AccessibilityBridge.requestTrust() },
                 onGrantScreen: { _ = ScreenContextProvider.shared.requestPermission() },
-                onDone: { [weak self] in self?.onboardingWindow?.close() }
+                onDone: { [weak self] profile in
+                    guard let self else { return }
+                    if let profile { self.settings.completeOnboarding(profile) }
+                    guard self.settings.hasCompletedOnboarding else { return }
+                    self.rebuildMenu()
+                    self.finishOnboardingIfReady()
+                }
             )
             let hosting = NSHostingController(rootView: view)
             let window = NSWindow(contentViewController: hosting)
             window.title = "Welcome to TabType"
             window.styleMask = [.titled, .closable]
-            window.setContentSize(NSSize(width: 480, height: 420))
+            window.setContentSize(NSSize(width: 612, height: 562))
             window.isReleasedWhenClosed = false
             window.center()
             onboardingWindow = window
         }
         NSApp.activate(ignoringOtherApps: true)
         onboardingWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Closes onboarding and starts the engine once first-run choices and
+    /// Accessibility are both done.
+    private func finishOnboardingIfReady() {
+        guard settings.hasCompletedOnboarding, AccessibilityBridge.isTrusted() else { return }
+        onboardingWindow?.close()
+        onboardingWindow = nil
+        _ = engine.start()
     }
 
     @objc private func openLog() {
@@ -361,9 +377,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 if AccessibilityBridge.isTrusted() {
                     self.trustTimer?.invalidate()
                     self.trustTimer = nil
-                    _ = self.engine.start()
                     self.rebuildMenu()
-                    self.onboardingWindow?.close()
+                    self.finishOnboardingIfReady()
                 }
             }
         }

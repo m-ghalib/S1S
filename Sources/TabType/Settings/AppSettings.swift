@@ -109,6 +109,23 @@ final class AppSettings: ObservableObject {
     }
 
     // MARK: Personalization
+    @Published private(set) var onboardingProfile: OnboardingProfile? {
+        didSet {
+            if let onboardingProfile,
+               let data = try? JSONEncoder().encode(onboardingProfile) {
+                defaults.set(data, forKey: Keys.onboardingProfile)
+            } else {
+                defaults.removeObject(forKey: Keys.onboardingProfile)
+            }
+        }
+    }
+    var hasCompletedOnboarding: Bool { onboardingProfile != nil }
+
+    func completeOnboarding(_ profile: OnboardingProfile) {
+        guard !profile.writingTypes.isEmpty, profile.completionPicks.count == OnboardingCatalog.roundCount else { return }
+        onboardingProfile = profile
+    }
+
     @Published var authorName: String { didSet { defaults.set(authorName, forKey: Keys.authorName) } }
     @Published var writingStyle: String { didSet { defaults.set(writingStyle, forKey: Keys.writingStyle) } }
     @Published var customInstructions: String { didSet { defaults.set(customInstructions, forKey: Keys.customInstructions) } }
@@ -226,6 +243,8 @@ final class AppSettings: ObservableObject {
         showAccessoryButton = defaults.object(forKey: Keys.showAccessoryButton) as? Bool ?? false
         disableMacOSPredictiveText = defaults.object(forKey: Keys.disableMacOSPredictiveText) as? Bool ?? false
         completionLength = defaults.string(forKey: Keys.completionLength) ?? "medium"
+        onboardingProfile = defaults.data(forKey: Keys.onboardingProfile)
+            .flatMap { try? JSONDecoder().decode(OnboardingProfile.self, from: $0) }
         // Prefill from the Mac's account name on first run — writing style/custom
         // instructions have no sensible universal default, so those stay blank.
         authorName = defaults.string(forKey: Keys.authorName) ?? NSFullUserName()
@@ -307,6 +326,7 @@ final class AppSettings: ObservableObject {
         static let completionLength = "completionLength"
         static let disableMacOSPredictiveText = "disableMacOSPredictiveText"
         static let authorName = "authorName"
+        static let onboardingProfile = "onboardingProfile"
         static let writingStyle = "writingStyle"
         static let customInstructions = "customInstructions"
         static let collectTypingHistory = "collectTypingHistory"
