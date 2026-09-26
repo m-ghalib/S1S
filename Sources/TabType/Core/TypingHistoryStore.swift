@@ -26,20 +26,6 @@ final class TypingHistoryStore: ObservableObject {
         var prefixTail: String
         var accepted: String
         var source: Source = .accepted
-
-        init(prefixTail: String, accepted: String, source: Source = .accepted) {
-            self.prefixTail = prefixTail
-            self.accepted = accepted
-            self.source = source
-        }
-
-        init(from decoder: Decoder) throws {
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            prefixTail = try c.decode(String.self, forKey: .prefixTail)
-            accepted = try c.decode(String.self, forKey: .accepted)
-            // Snapshots written before `source` existed hold only real accepts.
-            source = try c.decodeIfPresent(Source.self, forKey: .source) ?? .accepted
-        }
     }
 
     private struct Snapshot: Codable {
@@ -232,6 +218,17 @@ final class TypingHistoryStore: ObservableObject {
             return nil
         }
         return key
+    }
+}
+
+// Declared in an extension so the memberwise initializer stays available.
+extension TypingHistoryStore.AcceptPair {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        prefixTail = try c.decode(String.self, forKey: .prefixTail)
+        accepted = try c.decode(String.self, forKey: .accepted)
+        // Snapshots written before `source` existed hold only real accepts.
+        source = try c.decodeIfPresent(Source.self, forKey: .source) ?? .accepted
     }
 }
 

@@ -291,12 +291,21 @@ enum OnboardingPersonalization {
 
         let words = endings.map { $0.split(whereSeparator: \.isWhitespace).count }
         let average = Int((Double(words.reduce(0, +)) / Double(words.count)).rounded())
-        let length = average <= 4 ? "short" : average <= 9 ? "medium-length" : "long"
+        let length = switch average {
+        case ...4: "short"
+        case ...9: "medium-length"
+        default: "long"
+        }
         parts.append("prefers \(length) endings (about \(average) words)")
 
         let casual = endings.filter { hasEmoji($0) || $0.contains("!") || hasContraction($0) }.count
         let formalShare = 1 - Double(casual) / Double(endings.count)
-        parts.append(formalShare >= 0.75 ? "mostly formal" : formalShare <= 0.4 ? "casual" : "mixes formal and casual")
+        let formality = switch formalShare {
+        case 0.75...: "mostly formal"
+        case ...0.4: "casual"
+        default: "mixes formal and casual"
+        }
+        parts.append(formality)
 
         parts.append(frequency(of: endings.filter(hasEmoji).count, total: endings.count, noun: "emoji"))
         parts.append(frequency(of: endings.filter { $0.contains("!") }.count, total: endings.count,

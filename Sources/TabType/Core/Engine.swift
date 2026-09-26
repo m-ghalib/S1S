@@ -413,10 +413,9 @@ final class Engine {
     /// Warm the model's KV prefix cache with the static prompt head (system prompt
     /// + chat template + persona) so the first real suggestion skips that prefill.
     func warmUpModel() {
-        let personalExamples = settings.personalExamples
         let req = CompletionRequest(
             beforeCursor: "Hello", afterCursor: "", screenContext: "", clipboard: "",
-            persona: settings.personaPreface, personalExamples: personalExamples,
+            persona: settings.personaPreface, personalExamples: settings.personalExamples,
             previousWriting: [], speculative: true,
             maxWords: 1, maxTokens: 1, temperature: 0.0)
         Task { [weak self] in
