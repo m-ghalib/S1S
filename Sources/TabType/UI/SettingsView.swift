@@ -2,99 +2,126 @@ import SwiftUI
 import AppKit
 
 struct SettingsView: View {
-    enum Section: String, CaseIterable, Identifiable {
-        case setup = "Setup"
-        case general = "General"
-        case engine = "Engine & Model"
-        case context = "Context"
-        case personalization = "Personalization"
-        case textTools = "Text Tools"
-        case emoji = "Emoji"
-        case shortcuts = "Shortcuts"
-        case battery = "Battery"
-        case apps = "Apps"
-        case advanced = "Advanced"
-        case statistics = "Statistics"
-        case about = "About"
-
-        var id: String { rawValue }
-        var icon: String {
-            switch self {
-            case .setup: return "checkmark.seal"
-            case .general: return "gearshape"
-            case .engine: return "cpu"
-            case .context: return "doc.text.magnifyingglass"
-            case .personalization: return "person.crop.circle"
-            case .textTools: return "character.cursor.ibeam"
-            case .emoji: return "face.smiling"
-            case .shortcuts: return "keyboard"
-            case .battery: return "battery.100"
-            case .apps: return "app.badge"
-            case .advanced: return "slider.horizontal.3"
-            case .statistics: return "chart.bar"
-            case .about: return "info.circle"
-            }
-        }
-    }
-
-    @State private var selection: Section? = .setup
+    @State private var selection: SettingsItem? = .suggestions
+    /// The section the visible page should scroll to; the page clears it.
+    @State private var scrollTarget: SettingsAnchor?
     @ObservedObject private var navigator = SettingsNavigator.shared
 
     var body: some View {
         NavigationSplitView {
-            List(Section.allCases, selection: $selection) { section in
+            List(SettingsItem.allCases, selection: $selection) { item in
                 HStack(spacing: 8) {
-                    SidebarIconBadge(systemImage: section.icon, color: SectionAccent.color(for: section))
-                    Text(section.rawValue)
+                    SidebarIconBadge(systemImage: item.icon, color: SectionAccent.color(for: item))
+                    Text(item.rawValue)
                 }
-                .tag(section)
+                .tag(item)
             }
             .navigationSplitViewColumnWidth(min: 190, ideal: 200, max: 230)
         } detail: {
             detail
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationTitle((selection ?? .setup).rawValue)
+        .navigationTitle((selection ?? .suggestions).rawValue)
         .frame(minWidth: 680, minHeight: 460)
         .onAppear {
-            if let pending = navigator.pendingSection {
-                selection = pending
-                navigator.pendingSection = nil
-            }
-            navigator.desiredContentWidth = Self.contentWidth(for: selection ?? .general)
+            if let pending = navigator.pending { go(to: pending) }
+            navigator.desiredContentWidth = SettingsNavigator.contentWidth(for: selection ?? .suggestions)
         }
-        .onChange(of: navigator.pendingSection) { _, pending in
-            guard let pending else { return }
-            selection = pending
-            navigator.pendingSection = nil
+        .onChange(of: navigator.pending) { _, pending in
+            if let pending { go(to: pending) }
         }
         .onChange(of: selection) { _, newValue in
-            navigator.desiredContentWidth = Self.contentWidth(for: newValue ?? .general)
+            navigator.desiredContentWidth = SettingsNavigator.contentWidth(for: newValue ?? .suggestions)
         }
     }
 
-    /// The Apps pane hosts a nested HSplitView (app list + detail) that needs more
-    /// room; every other pane is a single column and reads better narrower.
-    static func contentWidth(for section: Section) -> CGFloat {
-        section == .apps ? 980 : 760
+    /// No anchor means the top of the page, which is its first section.
+    private func go(to destination: SettingsDestination) {
+        selection = destination.item
+        scrollTarget = destination.anchor ?? destination.item.anchors.first
+        navigator.pending = nil
     }
 
     @ViewBuilder private var detail: some View {
-        switch selection ?? .setup {
-        case .setup: SetupPane()
-        case .general: GeneralSettingsView()
-        case .engine: ModelSettingsView()
-        case .context: ContextPane()
-        case .personalization: PersonalizationPane()
-        case .textTools: TextToolsPane()
-        case .emoji: EmojiPane()
-        case .shortcuts: ShortcutsPane()
-        case .battery: BatteryPane()
-        case .apps: AppsSettingsView()
-        case .advanced: AdvancedSettingsView()
-        case .statistics: StatisticsPane()
-        case .about: AboutPane()
+        switch selection ?? .suggestions {
+        case .suggestions:
+            SettingsPage(item: .suggestions, target: $scrollTarget) {
+                PermissionsSections()
+                GeneralSettingsView()
+                EmojiPane()
+                TextToolsPane()
+                PersonalizationPane()
+                ShortcutsPane()
+            }
+        case .apps:
+            SettingsPage(item: .apps, target: $scrollTarget) {
+                Section {
+                    AppsSettingsView()
+                        .frame(height: 460)
+                        .listRowInsets(EdgeInsets())
+                } header: {
+                    PaneHeader(anchor: .apps)
+                }
+                ContextPane()
+            }
+        case .modelAndPower:
+            SettingsPage(item: .modelAndPower, target: $scrollTarget) {
+                ModelSettingsView()
+                BatteryPane()
+                AdvancedSettingsView()
+            }
+        case .about:
+            SettingsPage(item: .about, target: $scrollTarget) {
+                AboutPane()
+                StatisticsPane()
+                SetupStatusSections()
+            }
         }
+    }
+}
+
+/// One item's page: a single grouped `Form` that scrolls to `target` when it
+/// appears or when `target` changes, then clears it.
+private struct SettingsPage<Content: View>: View {
+    let item: SettingsItem
+    @Binding var target: SettingsAnchor?
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            Form { content }
+                .formStyle(.grouped)
+                .onAppear { scroll(proxy) }
+                .onChange(of: target) { _, _ in scroll(proxy) }
+        }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy) {
+        guard let anchor = target, anchor.item == item else { return }
+        // Wait one runloop turn so a page that just appeared has laid out.
+        DispatchQueue.main.async {
+            proxy.scrollTo(anchor, anchor: .top)
+            // A newer destination may have arrived meanwhile; leave it alone.
+            if target == anchor { target = nil }
+        }
+    }
+}
+
+/// The heading that opens each pane's block on a page, and the scroll target
+/// for its anchor. `subtitle` keeps the pane's own first section title.
+struct PaneHeader: View {
+    let anchor: SettingsAnchor
+    var subtitle: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(anchor.title)
+                .font(.title3).fontWeight(.semibold)
+                .foregroundStyle(.primary)
+                .padding(.top, 6)
+            if let subtitle { Text(subtitle) }
+        }
+        .id(anchor)
     }
 }
 
@@ -123,65 +150,59 @@ struct GeneralSettingsView: View {
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("Enable suggestions", isOn: $settings.isEnabled)
-                Toggle("Launch TabType at login", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { _, on in LaunchAtLogin.set(on) }
-                Toggle("Show menu bar icon", isOn: $settings.showMenuBarIcon)
-                Toggle("Show floating accessory button", isOn: $settings.showAccessoryButton)
-                Toggle("Disable macOS predictive text", isOn: $settings.disableMacOSPredictiveText)
-                if settings.disableMacOSPredictiveText {
-                    Text("Prevents conflicts with macOS's built-in inline suggestions. Log out and back in to fully apply.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
+        Section {
+            Toggle("Enable suggestions", isOn: $settings.isEnabled)
+            Toggle("Launch TabType at login", isOn: $launchAtLogin)
+                .onChange(of: launchAtLogin) { _, on in LaunchAtLogin.set(on) }
+            Toggle("Show menu bar icon", isOn: $settings.showMenuBarIcon)
+            Toggle("Show floating accessory button", isOn: $settings.showAccessoryButton)
+        } header: {
+            PaneHeader(anchor: .general)
+        }
 
-            Section("Accepting") {
-                Picker("On Tab, insert", selection: $settings.acceptWholeLine) {
-                    Text("One word at a time").tag(false)
-                    Text("The whole suggestion").tag(true)
-                }
-                .pickerStyle(.radioGroup)
-                Picker("Completion length", selection: $settings.completionLength) {
-                    Text("Short (~3 words)").tag("short")
-                    Text("Medium (~8 words)").tag("medium")
-                    Text("Long (~14 words)").tag("long")
-                }
+        Section("Accepting") {
+            Picker("On Tab, insert", selection: $settings.acceptWholeLine) {
+                Text("One word at a time").tag(false)
+                Text("The whole suggestion").tag(true)
             }
+            .pickerStyle(.radioGroup)
+            Picker("Completion length", selection: $settings.completionLength) {
+                Text("Short (~3 words)").tag("short")
+                Text("Medium (~8 words)").tag("medium")
+                Text("Long (~14 words)").tag("long")
+            }
+        }
 
-            Section("Appearance") {
-                GhostPreview(opacity: settings.ghostOpacity)
-                    .listRowInsets(EdgeInsets())
-                    .padding(.vertical, 4)
+        Section("Appearance") {
+            GhostPreview(opacity: settings.ghostOpacity)
+                .listRowInsets(EdgeInsets())
+                .padding(.vertical, 4)
+            HStack {
+                Text("Ghost text opacity")
+                Slider(value: $settings.ghostOpacity, in: 0.2...1.0)
+            }
+            Toggle("Text mirroring in web apps", isOn: $settings.textMirroring)
+            Text("Redraws your last word together with the suggestion on a matching backdrop, so both align perfectly in apps like Slack or Claude. Turn off to use plain ghost text everywhere.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+
+        Section("Timing") {
+            Toggle("Suggest continuously while typing", isOn: $settings.continuousGeneration)
+            Text(settings.continuousGeneration
+                 ? "Requests a suggestion on nearly every keystroke, so completions keep pace with fast typing. Uses more CPU while actively typing. Web apps like Slack or Claude always wait for a brief pause regardless."
+                 : "Waits for a pause in typing before requesting a suggestion.")
+                .font(.caption).foregroundStyle(.secondary)
+            if !settings.continuousGeneration {
                 HStack {
-                    Text("Ghost text opacity")
-                    Slider(value: $settings.ghostOpacity, in: 0.2...1.0)
-                }
-                Toggle("Text mirroring in web apps", isOn: $settings.textMirroring)
-                Text("Redraws your last word together with the suggestion on a matching backdrop, so both align perfectly in apps like Slack or Claude. Turn off to use plain ghost text everywhere.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section("Timing") {
-                Toggle("Suggest continuously while typing", isOn: $settings.continuousGeneration)
-                Text(settings.continuousGeneration
-                     ? "Requests a suggestion on nearly every keystroke, so completions keep pace with fast typing. Uses more CPU while actively typing. Web apps like Slack or Claude always wait for a brief pause regardless."
-                     : "Waits for a pause in typing before requesting a suggestion.")
-                    .font(.caption).foregroundStyle(.secondary)
-                if !settings.continuousGeneration {
-                    HStack {
-                        Text("Suggestion delay")
-                        Slider(value: Binding(
-                            get: { Double(settings.debounceMs) },
-                            set: { settings.debounceMs = Int($0) }), in: 40...600, step: 20)
-                        Text("\(settings.debounceMs) ms").monospacedDigit()
-                            .foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
-                    }
+                    Text("Suggestion delay")
+                    Slider(value: Binding(
+                        get: { Double(settings.debounceMs) },
+                        set: { settings.debounceMs = Int($0) }), in: 40...600, step: 20)
+                    Text("\(settings.debounceMs) ms").monospacedDigit()
+                        .foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
                 }
             }
         }
-        .formStyle(.grouped)
     }
 }
 
@@ -194,81 +215,83 @@ struct ModelSettingsView: View {
     @State private var storageTick = 0   // bump to refresh installed sizes
 
     var body: some View {
-        Form {
-            Section("Engine") {
-                Picker("Suggestions from", selection: $settings.engineChoice) {
-                    Text("Local model (recommended)").tag(EngineChoice.local)
-                    Text("Apple Intelligence").tag(EngineChoice.appleIntelligence)
-                    Text("Automatic").tag(EngineChoice.auto)
+        Section {
+            Picker("Suggestions from", selection: $settings.engineChoice) {
+                Text("Local model (recommended)").tag(EngineChoice.local)
+                Text("Apple Intelligence").tag(EngineChoice.appleIntelligence)
+                Text("Automatic").tag(EngineChoice.auto)
+            }
+            .pickerStyle(.radioGroup)
+            Label("The local model runs entirely on this Mac and never needs a network connection. Apple Intelligence is available as an alternative if you prefer it.",
+                  systemImage: "cpu")
+                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            PaneHeader(anchor: .engine, subtitle: "Engine")
+        }
+
+        Section("Local model") {
+            HStack {
+                statusIcon
+                Text(statusText).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+                if case .downloading(_, let p) = provider.state {
+                    ProgressView(value: p).frame(width: 120)
+                    Text("\(Int(p * 100))%").font(.caption).foregroundStyle(.secondary)
+                        .frame(width: 32, alignment: .trailing)
                 }
-                .pickerStyle(.radioGroup)
-                Label("The local model runs entirely on this Mac and never needs a network connection. Apple Intelligence is available as an alternative if you prefer it.",
-                      systemImage: "cpu")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section("Local model") {
-                HStack {
-                    statusIcon
-                    Text(statusText).foregroundStyle(.secondary).lineLimit(1)
-                    Spacer()
-                    if case .downloading(_, let p) = provider.state {
-                        ProgressView(value: p).frame(width: 120)
-                        Text("\(Int(p * 100))%").font(.caption).foregroundStyle(.secondary)
-                            .frame(width: 32, alignment: .trailing)
-                    }
-                    if case .finalizing = provider.state {
-                        ProgressView().controlSize(.small)
-                    }
-                    if case .failed(let modelId, _) = provider.state {
-                        Button("Retry") { provider.retry(modelId: modelId) }
-                    }
+                if case .finalizing = provider.state {
+                    ProgressView().controlSize(.small)
                 }
-                if case .failed(_, let message) = provider.state {
-                    Text(message).font(.caption).foregroundStyle(.red)
+                if case .failed(let modelId, _) = provider.state {
+                    Button("Retry") { provider.retry(modelId: modelId) }
+                }
+                if case .idle = provider.state {
+                    Button("Download") { provider.load(modelId: settings.modelId) }
                 }
             }
-
-            Section {
-                ForEach(ModelCatalog.recommended) { model in modelRow(model) }
-            } header: {
-                Text("Recommended")
-            } footer: {
-                Text("Recommended for this Mac: \(HardwareInfo.recommendationReason).")
-                    .font(.caption)
+            if case .failed(_, let message) = provider.state {
+                Text(message).font(.caption).foregroundStyle(.red)
             }
+        }
 
-            Section {
-                ForEach(ModelCatalog.other) { model in modelRow(model) }
-            } header: {
-                Text("Other Models")
-            } footer: {
-                Text("Instruct models continue text well but may occasionally reply instead of continuing it. Models on disk: \(ModelStorage.formatted(ModelStorage.totalUsed())).")
-                    .font(.caption)
-                    .id(storageTick)
+        Section {
+            ForEach(ModelCatalog.recommended) { model in modelRow(model) }
+        } header: {
+            Text("Recommended")
+        } footer: {
+            Text("Recommended for this Mac: \(HardwareInfo.recommendationReason).")
+                .font(.caption)
+        }
+
+        Section {
+            ForEach(ModelCatalog.other) { model in modelRow(model) }
+        } header: {
+            Text("Other Models")
+        } footer: {
+            Text("Instruct models continue text well but may occasionally reply instead of continuing it. Models on disk: \(ModelStorage.formatted(ModelStorage.totalUsed())).")
+                .font(.caption)
+                .id(storageTick)
+        }
+
+        Section("Custom Hugging Face model") {
+            HStack {
+                TextField("mlx-community/…", text: $customId)
+                    .textFieldStyle(.roundedBorder)
+                Button("Load") { select(customId) }
+                    .disabled(customId.trimmingCharacters(in: .whitespaces).isEmpty)
             }
+            Text("Any MLX-format text model from Hugging Face.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
 
-            Section("Custom Hugging Face model") {
-                HStack {
-                    TextField("mlx-community/…", text: $customId)
-                        .textFieldStyle(.roundedBorder)
-                    Button("Load") { select(customId) }
-                        .disabled(customId.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                Text("Any MLX-format text model from Hugging Face.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-
-            Section("Storage") {
-                LabeledContent("Model files") {
-                    Button("Reveal in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting(
-                            [ModelStorage.revealDir(for: settings.modelId)])
-                    }
+        Section("Storage") {
+            LabeledContent("Model files") {
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting(
+                        [ModelStorage.revealDir(for: settings.modelId)])
                 }
             }
         }
-        .formStyle(.grouped)
     }
 
     @ViewBuilder private var statusIcon: some View {
@@ -697,50 +720,49 @@ struct AdvancedSettingsView: View {
     @EnvironmentObject var settings: AppSettings
 
     var body: some View {
-        Form {
-            Section("Generation") {
-                HStack {
-                    Text("Creativity (temperature)")
-                    Slider(value: $settings.temperature, in: 0.0...1.0, step: 0.05)
-                    Text(String(format: "%.2f", settings.temperature)).monospacedDigit()
-                        .foregroundStyle(.secondary).frame(width: 44, alignment: .trailing)
-                }
-                Stepper(value: $settings.maxTokens, in: 6...48, step: 2) {
-                    LabeledContent("Max tokens generated", value: "\(settings.maxTokens)")
-                }
-                Text("A hard ceiling on generation length — General's \"Completion length\" already controls the typical suggestion length you'll see; you usually don't need to change this.")
-                    .font(.caption).foregroundStyle(.secondary)
-                HStack {
-                    Text("Context window")
-                    Slider(value: Binding(
-                        get: { Double(settings.contextChars) },
-                        set: { settings.contextChars = Int($0) }), in: 100...2400, step: 50)
-                    Text("\(settings.contextChars)").monospacedDigit()
-                        .foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
-                }
+        Section {
+            HStack {
+                Text("Creativity (temperature)")
+                Slider(value: $settings.temperature, in: 0.0...1.0, step: 0.05)
+                Text(String(format: "%.2f", settings.temperature)).monospacedDigit()
+                    .foregroundStyle(.secondary).frame(width: 44, alignment: .trailing)
             }
-            Section("Diagnostics") {
-                Toggle("Verbose logging", isOn: $settings.verboseLog)
-                Text("Writes your typed text and model output to the log file in plain text.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Button("Open Log in Console") {
-                    NSWorkspace.shared.open(Log.fileURL)
-                }
+            Stepper(value: $settings.maxTokens, in: 6...48, step: 2) {
+                LabeledContent("Max tokens generated", value: "\(settings.maxTokens)")
             }
-            Section {
-                Label("TabType runs 100% locally. Your text never leaves this Mac.",
-                      systemImage: "lock.shield")
-                    .font(.callout).foregroundStyle(.secondary)
+            Text("A hard ceiling on generation length — General's \"Completion length\" already controls the typical suggestion length you'll see; you usually don't need to change this.")
+                .font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Text("Context window")
+                Slider(value: Binding(
+                    get: { Double(settings.contextChars) },
+                    set: { settings.contextChars = Int($0) }), in: 100...2400, step: 50)
+                Text("\(settings.contextChars)").monospacedDigit()
+                    .foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
             }
-            Section {
-                Button("Reset to Defaults", role: .destructive) {
-                    settings.temperature = 0.1
-                    settings.maxTokens = 28
-                    settings.contextChars = 1200
-                    settings.verboseLog = false
-                }
+        } header: {
+            PaneHeader(anchor: .advanced, subtitle: "Generation")
+        }
+        Section("Diagnostics") {
+            Toggle("Verbose logging", isOn: $settings.verboseLog)
+            Text("Writes your typed text and model output to the log file in plain text.")
+                .font(.caption).foregroundStyle(.secondary)
+            Button("Open Log in Console") {
+                NSWorkspace.shared.open(Log.fileURL)
             }
         }
-        .formStyle(.grouped)
+        Section {
+            Label("TabType runs 100% locally. Your text never leaves this Mac.",
+                  systemImage: "lock.shield")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+        Section {
+            Button("Reset to Defaults", role: .destructive) {
+                settings.temperature = 0.1
+                settings.maxTokens = 28
+                settings.contextChars = 1200
+                settings.verboseLog = false
+            }
+        }
     }
 }

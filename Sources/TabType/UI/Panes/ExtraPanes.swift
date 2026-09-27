@@ -7,32 +7,31 @@ struct ContextPane: View {
     @EnvironmentObject var settings: AppSettings
 
     var body: some View {
-        Form {
-            Section("Screen Context") {
-                Toggle("Read on-screen context", isOn: $settings.useScreenContext)
-                Text("Reads the conversation or document around your cursor — via the accessibility tree in chat apps, or an on-device screenshot elsewhere — so suggestions match what you're working on. Chat apps like Slack and Claude always use this.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Text("TabType picks a context recipe per app: the conversation in chat apps and chat websites (accessibility tree, no screenshots), your document in writing apps, and nearby on-screen text elsewhere. Open the Apps section to see exactly what applies to each app — and to change it.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Picker("Screenshot extraction mode", selection: $settings.screenCropMode) {
-                    ForEach(AppSettings.ScreenCropMode.allCases, id: \.self) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
+        Section {
+            Toggle("Read on-screen context", isOn: $settings.useScreenContext)
+            Text("Reads the conversation or document around your cursor — via the accessibility tree in chat apps, or an on-device screenshot elsewhere — so suggestions match what you're working on. Chat apps like Slack and Claude always use this.")
+                .font(.caption).foregroundStyle(.secondary)
+            Text("TabType picks a context recipe per app: the conversation in chat apps and chat websites (accessibility tree, no screenshots), your document in writing apps, and nearby on-screen text elsewhere. Open the Apps section to see exactly what applies to each app — and to change it.")
+                .font(.caption).foregroundStyle(.secondary)
+            Picker("Screenshot extraction mode", selection: $settings.screenCropMode) {
+                ForEach(AppSettings.ScreenCropMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
                 }
-                .disabled(!settings.useScreenContext)
-                Text("Applies only when falling back to screenshot OCR. Caret-Aware focuses on the text around your cursor; Columnar helps with multi-column windows.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle("Use screenshots to improve suggestion appearance", isOn: $settings.useScreenshotAppearance)
-                Text("Samples the color around the caret so ghost text blends with the field's real text. May occasionally show a Screen Recording indicator in the menu bar.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Clipboard Settings") {
-                Toggle("Use clipboard for context", isOn: $settings.useClipboardContext)
-                Text("Reads your clipboard to understand what you're working with. Processed locally; never stored or sent anywhere.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+            .disabled(!settings.useScreenContext)
+            Text("Applies only when falling back to screenshot OCR. Caret-Aware focuses on the text around your cursor; Columnar helps with multi-column windows.")
+                .font(.caption).foregroundStyle(.secondary)
+            Toggle("Use screenshots to improve suggestion appearance", isOn: $settings.useScreenshotAppearance)
+            Text("Samples the color around the caret so ghost text blends with the field's real text. May occasionally show a Screen Recording indicator in the menu bar.")
+                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            PaneHeader(anchor: .context, subtitle: "Screen Context")
         }
-        .formStyle(.grouped)
+        Section("Clipboard Settings") {
+            Toggle("Use clipboard for context", isOn: $settings.useClipboardContext)
+            Text("Reads your clipboard to understand what you're working with. Processed locally; never stored or sent anywhere.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -42,53 +41,52 @@ struct TextToolsPane: View {
     @EnvironmentObject var settings: AppSettings
 
     var body: some View {
-        Form {
-            Section("Autocorrect") {
-                Toggle("Fix typos automatically", isOn: $settings.autocorrectEnabled)
-                    .onChange(of: settings.autocorrectEnabled) { _, on in
-                        if on { SpellChecker.shared.loadIfNeeded(language: settings.autocorrectLanguage) }
-                    }
-                Picker("Language", selection: $settings.autocorrectLanguage) {
-                    Section("Western") {
-                        ForEach(["en", "es", "fr", "de", "it", "pt"], id: \.self) {
-                            Text(SpellChecker.displayName($0)).tag($0)
-                        }
-                    }
-                    Section("Indian") {
-                        ForEach(["hi", "bn", "ta", "te", "ml", "ur"], id: \.self) {
-                            Text(SpellChecker.displayName($0)).tag($0)
-                        }
+        Section {
+            Toggle("Fix typos automatically", isOn: $settings.autocorrectEnabled)
+                .onChange(of: settings.autocorrectEnabled) { _, on in
+                    if on { SpellChecker.shared.loadIfNeeded(language: settings.autocorrectLanguage) }
+                }
+            Picker("Language", selection: $settings.autocorrectLanguage) {
+                Section("Western") {
+                    ForEach(["en", "es", "fr", "de", "it", "pt"], id: \.self) {
+                        Text(SpellChecker.displayName($0)).tag($0)
                     }
                 }
-                .disabled(!settings.autocorrectEnabled)
-                .onChange(of: settings.autocorrectLanguage) { _, lang in
-                    SpellChecker.shared.loadIfNeeded(language: lang)
-                }
-                Text("When you finish a word, clear typos are corrected in place (e.g. \"teh\" → \"the\"). Never in password fields.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle("Don't suggest while a word is misspelled", isOn: $settings.skipOnTypo)
-                    .onChange(of: settings.skipOnTypo) { _, on in
-                        if on { SpellChecker.shared.loadIfNeeded(language: settings.autocorrectLanguage) }
+                Section("Indian") {
+                    ForEach(["hi", "bn", "ta", "te", "ml", "ur"], id: \.self) {
+                        Text(SpellChecker.displayName($0)).tag($0)
                     }
-                Text("Pauses completions when the word at the cursor looks like a typo, instead of suggesting its corrected form.")
-                    .font(.caption).foregroundStyle(.secondary)
+                }
             }
-            Section("Macros") {
-                Toggle("Inline macros", isOn: $settings.macrosEnabled)
-                Text("Type `/` then a command and press Tab:")
-                    .font(.caption).foregroundStyle(.secondary)
-                Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {
-                    macroRow("/date, /time, /now", "current date / time")
-                    macroRow("/uuid, /dice, /coin", "random value")
-                    macroRow("/random 100", "random 0–100")
-                    macroRow("10km->mi", "unit conversion")
-                    macroRow("2+2*3", "arithmetic")
-                }
-                .font(.caption)
-                .padding(.top, 2)
+            .disabled(!settings.autocorrectEnabled)
+            .onChange(of: settings.autocorrectLanguage) { _, lang in
+                SpellChecker.shared.loadIfNeeded(language: lang)
             }
+            Text("When you finish a word, clear typos are corrected in place (e.g. \"teh\" → \"the\"). Never in password fields.")
+                .font(.caption).foregroundStyle(.secondary)
+            Toggle("Don't suggest while a word is misspelled", isOn: $settings.skipOnTypo)
+                .onChange(of: settings.skipOnTypo) { _, on in
+                    if on { SpellChecker.shared.loadIfNeeded(language: settings.autocorrectLanguage) }
+                }
+            Text("Pauses completions when the word at the cursor looks like a typo, instead of suggesting its corrected form.")
+                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            PaneHeader(anchor: .textTools, subtitle: "Autocorrect")
         }
-        .formStyle(.grouped)
+        Section("Macros") {
+            Toggle("Inline macros", isOn: $settings.macrosEnabled)
+            Text("Type `/` then a command and press Tab:")
+                .font(.caption).foregroundStyle(.secondary)
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {
+                macroRow("/date, /time, /now", "current date / time")
+                macroRow("/uuid, /dice, /coin", "random value")
+                macroRow("/random 100", "random 0–100")
+                macroRow("10km->mi", "unit conversion")
+                macroRow("2+2*3", "arithmetic")
+            }
+            .font(.caption)
+            .padding(.top, 2)
+        }
     }
 
     private func macroRow(_ cmd: String, _ desc: String) -> some View {
@@ -103,36 +101,35 @@ struct ShortcutsPane: View {
     @EnvironmentObject var settings: AppSettings
 
     var body: some View {
-        Form {
-            Section("Shortcuts") {
-                KeyRecorderRow(title: "Accept word", binding: $settings.acceptWordKey)
-                KeyRecorderRow(title: "Accept whole suggestion", binding: $settings.acceptAllKey)
-                KeyRecorderRow(title: "Dismiss", binding: $settings.dismissKey)
-                KeyRecorderRow(title: "Word alternatives", binding: $settings.wordAlternativesKey)
-                KeyRecorderRow(title: "Force a suggestion", binding: $settings.forceActivateKey)
-                KeyRecorderRow(title: "Pause in current app (5 min)", binding: $settings.appPauseKey)
-                KeyRecorderRow(title: "Enable/disable TabType", binding: $settings.toggleKey, allowNone: true)
-                Text("Hold ⌥ with the accept key to send the real key to the app (e.g. ⌥Tab moves between form fields while a suggestion is shown).")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Accepting a word") {
-                Toggle("Include trailing space", isOn: $settings.includeTrailingSpace)
-                Toggle("Include trailing punctuation", isOn: $settings.includeTrailingPunctuation)
-                Text("When off, punctuation attached to a word (like a period or ?) is left for a separate press.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Behavior") {
-                Picker("When you press Escape", selection: $settings.escapeBehavior) {
-                    Text("Dismiss the suggestion").tag("dismiss")
-                    Text("Pause completions briefly").tag("pause")
-                }
-            }
-            Section {
-                Text("Click a shortcut, then press the key combination you want. Changes take effect immediately.")
-                    .font(.caption).foregroundStyle(.secondary)
+        Section {
+            KeyRecorderRow(title: "Accept word", binding: $settings.acceptWordKey)
+            KeyRecorderRow(title: "Accept whole suggestion", binding: $settings.acceptAllKey)
+            KeyRecorderRow(title: "Dismiss", binding: $settings.dismissKey)
+            KeyRecorderRow(title: "Word alternatives", binding: $settings.wordAlternativesKey)
+            KeyRecorderRow(title: "Force a suggestion", binding: $settings.forceActivateKey)
+            KeyRecorderRow(title: "Pause in current app (5 min)", binding: $settings.appPauseKey)
+            KeyRecorderRow(title: "Enable/disable TabType", binding: $settings.toggleKey, allowNone: true)
+            Text("Hold ⌥ with the accept key to send the real key to the app (e.g. ⌥Tab moves between form fields while a suggestion is shown).")
+                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            PaneHeader(anchor: .shortcuts)
+        }
+        Section("Accepting a word") {
+            Toggle("Include trailing space", isOn: $settings.includeTrailingSpace)
+            Toggle("Include trailing punctuation", isOn: $settings.includeTrailingPunctuation)
+            Text("When off, punctuation attached to a word (like a period or ?) is left for a separate press.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section("Behavior") {
+            Picker("When you press Escape", selection: $settings.escapeBehavior) {
+                Text("Dismiss the suggestion").tag("dismiss")
+                Text("Pause completions briefly").tag("pause")
             }
         }
-        .formStyle(.grouped)
+        Section {
+            Text("Click a shortcut, then press the key combination you want. Changes take effect immediately.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -225,78 +222,77 @@ struct PersonalizationPane: View {
     @State private var showingDeleteConfirm = false
 
     var body: some View {
-        Form {
-            Section("Typing History") {
-                Toggle("Collect inputs for personalization", isOn: $settings.collectTypingHistory)
-                Text("TabType can record short snippets of text it monitors to improve completions. All collected data is encrypted and stored locally on your Mac — nothing is sent anywhere. Not recommended if you work with particularly sensitive information.")
-                    .font(.caption).foregroundStyle(.secondary)
-                Toggle("Store inputs without accepted completions", isOn: $settings.storeInputsWithoutAcceptedCompletions)
-                    .disabled(!settings.collectTypingHistory)
-                Text("When on, TabType stores everything it monitors, even when you don't accept a suggestion. When off, only text where you accepted a completion is stored.")
-                    .font(.caption).foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Personalize word choice")
-                        Slider(value: $settings.personalizeWordChoice, in: 0...1, step: 0.05)
-                        Text(settings.personalizeWordChoice == 0 ? "Off" : String(format: "%.0f%%", settings.personalizeWordChoice * 100))
-                            .monospacedDigit().foregroundStyle(.secondary).frame(width: 40, alignment: .trailing)
-                    }
-                    Text("Shows the model examples of your writing: your onboarding picks at first, then completions you accept. With typing history on, it also favors words you use often. Higher values use more examples; too high may occasionally suggest a less fitting word.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                // Kept in a subview so TypingHistoryStore.shared (which reads the
-                // Keychain on first touch) is only instantiated when data can exist.
-                if settings.collectTypingHistory || TypingHistoryStore.historyFileExists {
-                    HistoryDataRow(showingDeleteConfirm: $showingDeleteConfirm)
-                }
-            }
-            Section("Onboarding") {
+        Section {
+            Toggle("Collect inputs for personalization", isOn: $settings.collectTypingHistory)
+            Text("TabType can record short snippets of text it monitors to improve completions. All collected data is encrypted and stored locally on your Mac — nothing is sent anywhere. Not recommended if you work with particularly sensitive information.")
+                .font(.caption).foregroundStyle(.secondary)
+            Toggle("Store inputs without accepted completions", isOn: $settings.storeInputsWithoutAcceptedCompletions)
+                .disabled(!settings.collectTypingHistory)
+            Text("When on, TabType stores everything it monitors, even when you don't accept a suggestion. When off, only text where you accepted a completion is stored.")
+                .font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("Redo the writing-style picks from first-run setup.")
-                    Spacer()
-                    Button("Redo Onboarding…") {
-                        NotificationCenter.default.post(name: .tabTypeRedoOnboarding, object: nil)
-                    }
+                    Text("Personalize word choice")
+                    Slider(value: $settings.personalizeWordChoice, in: 0...1, step: 0.05)
+                    Text(settings.personalizeWordChoice == 0 ? "Off" : String(format: "%.0f%%", settings.personalizeWordChoice * 100))
+                        .monospacedDigit().foregroundStyle(.secondary).frame(width: 40, alignment: .trailing)
                 }
-                Text("Replaces your earlier choices, the writing style below, and the onboarding examples. Completions you accepted are kept.")
+                Text("Shows the model examples of your writing: your onboarding picks at first, then completions you accept. With typing history on, it also favors words you use often. Higher values use more examples; too high may occasionally suggest a less fitting word.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section {
-                HStack {
-                    Text("Custom AI Instructions").font(.headline)
-                    Spacer()
-                    Button("Reset to Default") {
-                        settings.authorName = NSFullUserName()
-                        settings.writingStyle = ""
-                        settings.customInstructions = ""
-                    }
-                }
-                TextField("Your name (optional)", text: $settings.authorName)
-                    .textFieldStyle(.roundedBorder)
-                VStack(alignment: .leading) {
-                    Text("Writing style").font(.caption).foregroundStyle(.secondary)
-                    TextField("Writing style", text: $settings.writingStyle,
-                              prompt: Text("e.g. concise, friendly, British spelling"), axis: .vertical)
-                        .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(2...4)
-                }
-                VStack(alignment: .leading) {
-                    Text("Custom instructions").font(.caption).foregroundStyle(.secondary)
-                    TextField("Custom instructions", text: $settings.customInstructions,
-                              prompt: Text("e.g. Avoid exclamation marks. Prefer plain words."), axis: .vertical)
-                        .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(2...5)
-                }
-                Text("These shape suggestions to match your voice. Sent only to the on-device model.")
-                    .font(.caption).foregroundStyle(.secondary)
+            // Kept in a subview so TypingHistoryStore.shared (which reads the
+            // Keychain on first touch) is only instantiated when data can exist.
+            if settings.collectTypingHistory || TypingHistoryStore.historyFileExists {
+                HistoryDataRow(showingDeleteConfirm: $showingDeleteConfirm)
             }
+        } header: {
+            PaneHeader(anchor: .personalization, subtitle: "Typing History")
         }
-        .formStyle(.grouped)
         .confirmationDialog("Delete all collected typing history?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
             Button("Delete All", role: .destructive) { TypingHistoryStore.shared.deleteAll() }
             Button("Cancel", role: .cancel) {}
+        }
+        Section("Onboarding") {
+            HStack {
+                Text("Redo the writing-style picks from first-run setup.")
+                Spacer()
+                Button("Redo Onboarding…") {
+                    NotificationCenter.default.post(name: .tabTypeRedoOnboarding, object: nil)
+                }
+            }
+            Text("Replaces your earlier choices, the writing style below, and the onboarding examples. Completions you accepted are kept.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section {
+            HStack {
+                Text("Custom AI Instructions").font(.headline)
+                Spacer()
+                Button("Reset to Default") {
+                    settings.authorName = NSFullUserName()
+                    settings.writingStyle = ""
+                    settings.customInstructions = ""
+                }
+            }
+            TextField("Your name (optional)", text: $settings.authorName)
+                .textFieldStyle(.roundedBorder)
+            VStack(alignment: .leading) {
+                Text("Writing style").font(.caption).foregroundStyle(.secondary)
+                TextField("Writing style", text: $settings.writingStyle,
+                          prompt: Text("e.g. concise, friendly, British spelling"), axis: .vertical)
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(2...4)
+            }
+            VStack(alignment: .leading) {
+                Text("Custom instructions").font(.caption).foregroundStyle(.secondary)
+                TextField("Custom instructions", text: $settings.customInstructions,
+                          prompt: Text("e.g. Avoid exclamation marks. Prefer plain words."), axis: .vertical)
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(2...5)
+            }
+            Text("These shape suggestions to match your voice. Sent only to the on-device model.")
+                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }
@@ -331,24 +327,23 @@ private struct HistoryDataRow: View {
 struct EmojiPane: View {
     @EnvironmentObject var settings: AppSettings
     var body: some View {
-        Form {
-            Section {
-                Toggle("Enable emoji suggestions", isOn: $settings.emojiEnabled)
-                Toggle("Suggest emoji from emoticons", isOn: $settings.emoticonsEnabled)
-                Text("Type `:name` and Tab to insert 🚀, or common emoticons like :-) ;-) <3 which convert automatically.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Customization") {
-                Picker("Preferred skin tone", selection: $settings.emojiSkinTone) {
-                    ForEach(SkinTone.allCases, id: \.rawValue) { tone in
-                        Text(tone.label).tag(tone.rawValue)
-                    }
-                }
-                Text("Applied to emoji that support skin-tone modifiers.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+        Section {
+            Toggle("Enable emoji suggestions", isOn: $settings.emojiEnabled)
+            Toggle("Suggest emoji from emoticons", isOn: $settings.emoticonsEnabled)
+            Text("Type `:name` and Tab to insert 🚀, or common emoticons like :-) ;-) <3 which convert automatically.")
+                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            PaneHeader(anchor: .emoji)
         }
-        .formStyle(.grouped)
+        Section("Customization") {
+            Picker("Preferred skin tone", selection: $settings.emojiSkinTone) {
+                ForEach(SkinTone.allCases, id: \.rawValue) { tone in
+                    Text(tone.label).tag(tone.rawValue)
+                }
+            }
+            Text("Applied to emoji that support skin-tone modifiers.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -356,23 +351,22 @@ struct EmojiPane: View {
 struct BatteryPane: View {
     @EnvironmentObject var settings: AppSettings
     var body: some View {
-        Form {
-            Section {
-                Label(PowerMonitor.shared.isLowPower
-                      ? "Low Power Mode is on — these settings are active."
-                      : "These settings take effect while macOS Low Power Mode is on.",
-                      systemImage: "bolt")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-            Section("In Low Power Mode") {
-                Toggle("Only show completions on demand", isOn: $settings.batteryOnDemandOnly)
-                Toggle("Generate slightly shorter completions", isOn: $settings.batteryShorterCompletions)
-                Toggle("Fall back to debounced suggestions", isOn: $settings.batteryUseDebounce)
-                Text("Reduces power draw. When Apple Intelligence is the engine, impact is minimal; this mainly helps the local model. \"Fall back to debounced suggestions\" automatically steps down from continuous generation (General ▸ Timing) in Low Power Mode, without needing to turn it off manually.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+        Section {
+            Label(PowerMonitor.shared.isLowPower
+                  ? "Low Power Mode is on — these settings are active."
+                  : "These settings take effect while macOS Low Power Mode is on.",
+                  systemImage: "bolt")
+                .font(.callout).foregroundStyle(.secondary)
+        } header: {
+            PaneHeader(anchor: .battery)
         }
-        .formStyle(.grouped)
+        Section("In Low Power Mode") {
+            Toggle("Only show completions on demand", isOn: $settings.batteryOnDemandOnly)
+            Toggle("Generate slightly shorter completions", isOn: $settings.batteryShorterCompletions)
+            Toggle("Fall back to debounced suggestions", isOn: $settings.batteryUseDebounce)
+            Text("Reduces power draw. When Apple Intelligence is the engine, impact is minimal; this mainly helps the local model. \"Fall back to debounced suggestions\" automatically steps down from continuous generation (Suggestions ▸ General ▸ Timing) in Low Power Mode, without needing to turn it off manually.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -381,30 +375,29 @@ struct StatisticsPane: View {
     @ObservedObject var stats = Statistics.shared
 
     var body: some View {
-        Form {
-            Section {
-                Text("These numbers are stored only on your Mac and never leave it.")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-            Section("Usage") {
-                LabeledContent("Words completed", value: "\(stats.wordsCompleted)")
-                LabeledContent("Suggestions shown", value: "\(stats.suggestionsShown)")
-                LabeledContent("Suggestions accepted", value: "\(stats.suggestionsAccepted)")
-                LabeledContent("Acceptance rate", value: percent(stats.acceptanceRate))
-            }
-            Section("Suggestion Funnel") {
-                LabeledContent("Show rate", value: percent(stats.showRate))
-                ForEach(Statistics.FunnelEvent.allCases, id: \.rawValue) { event in
-                    LabeledContent(event.label, value: "\(stats.funnel[event] ?? 0)")
-                }
-                Text("Where suggestions die between a model request and the ghost text on screen. A low show rate with high rejection counts points at over-aggressive filtering; high \"input changed\" counts point at latency.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section {
-                Button("Reset Statistics", role: .destructive) { stats.reset() }
-            }
+        Section {
+            Text("These numbers are stored only on your Mac and never leave it.")
+                .font(.callout).foregroundStyle(.secondary)
+        } header: {
+            PaneHeader(anchor: .statistics)
         }
-        .formStyle(.grouped)
+        Section("Usage") {
+            LabeledContent("Words completed", value: "\(stats.wordsCompleted)")
+            LabeledContent("Suggestions shown", value: "\(stats.suggestionsShown)")
+            LabeledContent("Suggestions accepted", value: "\(stats.suggestionsAccepted)")
+            LabeledContent("Acceptance rate", value: percent(stats.acceptanceRate))
+        }
+        Section("Suggestion Funnel") {
+            LabeledContent("Show rate", value: percent(stats.showRate))
+            ForEach(Statistics.FunnelEvent.allCases, id: \.rawValue) { event in
+                LabeledContent(event.label, value: "\(stats.funnel[event] ?? 0)")
+            }
+            Text("Where suggestions die between a model request and the ghost text on screen. A low show rate with high rejection counts points at over-aggressive filtering; high \"input changed\" counts point at latency.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+        Section {
+            Button("Reset Statistics", role: .destructive) { stats.reset() }
+        }
     }
 
     private func percent(_ v: Double) -> String {
@@ -412,47 +405,43 @@ struct StatisticsPane: View {
     }
 }
 
-/// Experimental, opt-in features that may change or be removed.
-
-
 struct AboutPane: View {
     var body: some View {
-        Form {
-            Section {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "text.cursor")
-                            .font(.system(size: 28)).foregroundStyle(.tint)
-                        VStack(alignment: .leading) {
-                            Text("TabType").font(.title2).bold()
-                            Text("Free, open-source, on-device autocomplete for macOS.")
-                                .font(.callout).foregroundStyle(.secondary)
-                        }
+        Section {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    Image(systemName: "text.cursor")
+                        .font(.system(size: 28)).foregroundStyle(.tint)
+                    VStack(alignment: .leading) {
+                        Text("TabType").font(.title2).bold()
+                        Text("Free, open-source, on-device autocomplete for macOS.")
+                            .font(.callout).foregroundStyle(.secondary)
                     }
                 }
             }
-            Section("Privacy") {
-                Label("Runs 100% on your Mac. No cloud, no account, no telemetry.",
-                      systemImage: "lock.shield")
-                Label("Your text and screen content never leave the device.",
-                      systemImage: "hand.raised")
-                Label("Password fields are never autocompleted.",
-                      systemImage: "key.slash")
-            }
-            Section("Open source") {
-                Text("MIT licensed. Inspired by Cotypist; built in the open, more permissive than AGPL alternatives.")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-            Section("Third-party acknowledgments") {
-                ForEach(Self.acknowledgments, id: \.name) { ack in
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(ack.name).fontWeight(.medium)
-                        Text(ack.detail).font(.caption).foregroundStyle(.secondary)
-                    }
+        } header: {
+            PaneHeader(anchor: .about)
+        }
+        Section("Privacy") {
+            Label("Runs 100% on your Mac. No cloud, no account, no telemetry.",
+                  systemImage: "lock.shield")
+            Label("Your text and screen content never leave the device.",
+                  systemImage: "hand.raised")
+            Label("Password fields are never autocompleted.",
+                  systemImage: "key.slash")
+        }
+        Section("Open source") {
+            Text("MIT licensed. Inspired by Cotypist; built in the open, more permissive than AGPL alternatives.")
+                .font(.callout).foregroundStyle(.secondary)
+        }
+        Section("Third-party acknowledgments") {
+            ForEach(Self.acknowledgments, id: \.name) { ack in
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(ack.name).fontWeight(.medium)
+                    Text(ack.detail).font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
-        .formStyle(.grouped)
     }
 
     private static let acknowledgments: [(name: String, detail: String)] = [

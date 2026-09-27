@@ -6,21 +6,12 @@ import SwiftUI
 /// Settings intentionally stays on stock `.formStyle(.grouped)` — that already reads
 /// as native and correct; the sidebar icons were the actual visual gap.
 enum SectionAccent {
-    static func color(for section: SettingsView.Section) -> Color {
-        switch section {
-        case .setup: return .blue
-        case .general: return .gray
-        case .engine: return .indigo
-        case .context: return .orange
-        case .personalization: return .purple
-        case .textTools: return .teal
-        case .emoji: return .yellow
-        case .shortcuts: return .pink
-        case .battery: return .green
+    static func color(for item: SettingsItem) -> Color {
+        switch item {
+        case .suggestions: return .blue
         case .apps: return .red
-        case .advanced: return .blue
-        case .statistics: return .cyan
-        case .about: return .brown
+        case .modelAndPower: return .indigo
+        case .about: return .gray
         }
     }
 }

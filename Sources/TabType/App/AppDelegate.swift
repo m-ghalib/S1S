@@ -243,24 +243,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     @objc private func resumeNow() { engine.resume(); rebuildMenu() }
     @objc private func resumeAppPause() { engine.resumeFrontmostAppPause(); rebuildMenu() }
 
-    @objc private func openStatistics() {
-        SettingsNavigator.shared.pendingSection = .statistics
-        openSettings()
+    @objc private func openStatistics() { openSettingsWindow(for: .statistics) }
+    @objc private func openAbout() { openSettingsWindow(for: .about) }
+
+    /// The plain Settings action opens where setup state says (see `defaultDestination`).
+    @objc private func openSettings() { openSettingsWindow(for: .settings) }
+
+    private func openSettingsWindow(for entry: SettingsEntry) {
+        var modelReady = false
+        if case .ready = provider.state { modelReady = true }
+        SettingsNavigator.shared.pending = SettingsNavigator.destination(
+            for: entry, axGranted: AccessibilityBridge.isTrusted(), modelReady: modelReady)
+        showSettingsWindow()
     }
 
-    @objc private func openAbout() {
-        SettingsNavigator.shared.pendingSection = .about
-        openSettings()
-    }
-
-    @objc private func openSettings() {
+    private func showSettingsWindow() {
         if settingsWindow == nil {
             let view = SettingsView().environmentObject(settings).environmentObject(provider)
             let hosting = NSHostingController(rootView: view)
             let window = NSWindow(contentViewController: hosting)
             // SwiftUI's navigationTitle only reaches the window on a selection
-            // change, so seed it with the pane the window opens on.
-            window.title = (SettingsNavigator.shared.pendingSection ?? .setup).rawValue
+            // change, so seed it with the item the window opens on.
+            window.title = (SettingsNavigator.shared.pending?.item ?? .suggestions).rawValue
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.setContentSize(NSSize(width: SettingsNavigator.shared.desiredContentWidth, height: 620))
             window.minSize = NSSize(width: 760, height: 460)
@@ -281,7 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
-        // Honor the current section's width now that the window is visible (the
+        // Honor the current item's width now that the window is visible (the
         // sink's initial value arrived while it was still hidden).
         resizeSettings(toContentWidth: SettingsNavigator.shared.desiredContentWidth)
     }
