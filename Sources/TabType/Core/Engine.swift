@@ -1164,6 +1164,19 @@ final class Engine {
             return
         }
 
+        // An empty readable field wins over the keystroke buffer (see
+        // `ContextReader.resolveInput`), but Electron can publish a first keystroke
+        // late — past the publish-wait timeout. While typing is recent and the buffer
+        // disagrees, look again shortly instead of dropping this cycle.
+        if !ctx.hasInput, !speculative,
+           Self.awaitingLateAXPublish(buffer: buffer, sinceKeystroke: Date().timeIntervalSince(lastKeystrokeAt)) {
+            let token = scheduleToken
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                guard let self, token == self.scheduleToken else { return }
+                self.runPrediction()
+            }
+            return
+        }
         guard ctx.hasInput, forceNextPrediction || Engine.shouldPredict(ctx.input) else { return }
 
         // A truly empty line gives a small model nothing to anchor on, so it can
@@ -1684,6 +1697,13 @@ final class Engine {
                 painted = fresh
             }
         }
+    }
+
+    /// The field reads empty but the keystroke buffer has text typed within the
+    /// last 1.5 s: AX has probably not published the keystroke yet. Older buffer
+    /// text is stale (a sent or cleared message) and must not be predicted from.
+    nonisolated static func awaitingLateAXPublish(buffer: String, sinceKeystroke: TimeInterval) -> Bool {
+        sinceKeystroke < 1.5 && !buffer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// Whether a freshly read caret differs enough from the painted one to redraw.

@@ -41,14 +41,10 @@ enum ContextReader {
         let focused = AccessibilityBridge.focusedElement()
         let window = focused.flatMap { windowOf($0) }
 
-        var input = ""
-        if let focused,
-           let axText = AccessibilityBridge.textBeforeCaret(of: focused, maxChars: inputChars),
-           !axText.isEmpty {
-            input = axText
-        } else {
-            input = String(fallbackBuffer.suffix(inputChars))
-        }
+        let input = resolveInput(
+            axText: focused.flatMap { AccessibilityBridge.textBeforeCaret(of: $0, maxChars: inputChars) },
+            caretReadable: focused.flatMap { AccessibilityBridge.caretOffset(of: $0) } != nil,
+            fallbackBuffer: fallbackBuffer, inputChars: inputChars)
 
         // Long-form: if the field holds more text than the caret window shows,
         // the document's opening (title/intro) anchors what this is ABOUT.
@@ -71,6 +67,17 @@ enum ContextReader {
                       focused: focused, window: window,
                       hasInput: !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                       documentStart: documentStart)
+    }
+
+    /// The text before the caret. The keystroke buffer stands in only when AX
+    /// text is unreadable. A readable field with a readable caret and nothing
+    /// before it is genuinely empty (e.g. a chat composer right after sending);
+    /// falling back there resurrects the sent message and paints its
+    /// continuation over the placeholder.
+    static func resolveInput(axText: String?, caretReadable: Bool,
+                             fallbackBuffer: String, inputChars: Int) -> String {
+        if let axText, !axText.isEmpty || caretReadable { return axText }
+        return String(fallbackBuffer.suffix(inputChars))
     }
 
     /// Frame of the window enclosing `element`, if resolvable.

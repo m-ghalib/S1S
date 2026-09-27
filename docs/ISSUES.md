@@ -494,3 +494,35 @@ Active memory was the same in both runs, so no arrays leaked. Only the cache gre
 **Suggested fix:** Apply the same punctuation rule (period, comma, colon, or hyphen) to `AppPolicy.summaryLines` and the `ModelCatalog` notes.
 
 **Verification gap (Settings design cleanup):** The orange "required item missing" state was not observed in the running app. The model falls back to the recommended model within about 2 seconds, and the menu does not respond during that window. `SetupTone.for(ok:required:)` is covered by unit tests. Light mode was also not captured, because switching the system appearance changes a system setting.
+
+## TT-022
+
+**Claude Desktop: ghost text paints at the start of the composer, over the placeholder or typed text**
+
+- **Severity:** High. The ghost overlaps real text in a primary chat app.
+- **Status:** Fixed (2026-09-27). Verified in the running app through computer use.
+- **Area:** `ContextReader.resolveInput`, `AccessibilityBridge.caretRect`
+
+**Steps:**
+
+1. In Claude Desktop, type a message, then clear the composer (send it, or press Cmd+A and Delete). Wait.
+2. In an empty composer, type one letter, such as `s`. Wait.
+
+**Actual:**
+
+1. A continuation of the cleared message appears at the composer's left edge, drawn over the "Reply" placeholder.
+2. The ghost starts at the composer's left edge, over the typed letter, instead of after it.
+
+**Cause:**
+
+1. The empty composer reports AX value `"\n"` with caret 0. `ContextReader` treated the empty text before the caret as unreadable and fell back to the keystroke buffer, which still held the cleared message.
+2. The composer's own `AXBoundsForRange` returns an off-screen rect, and `AXBoundsForTextMarkerRange` returns the whole line box (756 pt wide). The line box was accepted as the caret, and the overlay anchors line 1 at `caretRect.minX`.
+
+**Fix:**
+
+1. The keystroke buffer stands in only when AX text is unreadable. A readable field with a readable caret and no text before it counts as empty. If the buffer holds text typed in the last 1.5 s, AX may not have published the keystroke yet, so the engine retries every 0.25 s instead of dropping the cycle.
+2. A marker rect wider than 4 pt is rejected as a caret. The caret is then resolved from the composer's `AXStaticText` runs, which report exact character bounds. Chromium's selection offsets skip the paragraph separators in `AXValue`, so the runs are concatenated without separators. A caret on a run boundary is ambiguous (end of one paragraph or start of the next). The run whose rect lies on the marker's line box wins. If the line box does not settle it, no inline rect is returned.
+
+**Retest:** Typing `s` places the ghost after the letter (caret x 1102, previously 1093 with width 756). Clearing a typed message leaves the composer showing only "Reply". Long text that wraps places the ghost on line 2 after the last word. Tab and Esc work.
+
+**Related, not fixed:** After Tab accepts one word in Claude Desktop, the remaining ghost does not reappear. The unmodified build behaves the same way. In a multi-paragraph composer, `AXSelectedTextRange` skips the `"\n"` separators, so `textBeforeCaret` drops one character per paragraph break.

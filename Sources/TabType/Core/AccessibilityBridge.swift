@@ -183,7 +183,7 @@ enum AccessibilityBridge {
     /// prefer the anchor itself. This is what fixed the "wide gap" ghost-text bug.
     static func caretRect(of element: AXUIElement) -> CGRect? {
         guard let caret = caretOffset(of: element) else {
-            if let r = textMarkerCaretRect(element), isValidCaretRect(r) { return r }
+            if let r = textMarkerCaretRect(element), isValidCaretRect(r), isCaretWidth(r) { return r }
             return nil
         }
 
@@ -223,8 +223,97 @@ enum AccessibilityBridge {
 
         // AXTextMarker path — WebKit/Chromium (Safari, Chrome, Electron) expose
         // caret geometry via text markers rather than NSRange.
-        if let r = textMarkerCaretRect(element), isValidCaretRect(r) { return r }
+        let marker = textMarkerCaretRect(element).flatMap { isValidCaretRect($0) ? $0 : nil }
+        if let marker, isCaretWidth(marker) { return marker }
+
+        // Chromium content editables (Claude Desktop's composer) can answer both
+        // queries with garbage: NSRange bounds off-screen, and the marker bounds
+        // as the whole LINE box. Anchoring to that box put the ghost at the line
+        // start, over the typed text. The per-paragraph AXStaticText runs still
+        // report exact character bounds, so resolve the caret there.
+        if let r = staticTextCaretRect(element, caret: caret, line: marker) { return r }
+        // Nothing typed on the caret's line: the line box's left edge IS the caret.
+        if let marker, lineIsEmptyBeforeCaret(element, caret: caret) {
+            return CGRect(x: marker.minX, y: marker.minY, width: 0, height: marker.height)
+        }
         return nil
+    }
+
+    /// A real caret is a hairline; anything wider is a line or field box.
+    static func isCaretWidth(_ rect: CGRect) -> Bool { rect.width <= 4 }
+
+    /// Which static-text run holds `caret`, and the offset inside it. Runs are
+    /// consecutive with no separator between them: Chromium's selection offsets
+    /// skip the "\n" its AXValue puts between paragraphs (observed in Claude
+    /// Desktop: caret at the end of "abc\nde" reports offset 5, not 6).
+    /// Because separators are skipped, a caret on a run boundary is ambiguous: the
+    /// end of one paragraph and the start of the next share an offset. Both
+    /// readings are returned (earlier run first) for the caller to settle.
+    static func runLocations(caret: Int, runLengths: [Int]) -> [(run: Int, offset: Int)] {
+        guard caret >= 0 else { return [] }
+        var start = 0
+        for (i, length) in runLengths.enumerated() {
+            if caret < start + length { return [(i, caret - start)] }
+            if caret == start + length {
+                return i + 1 < runLengths.count ? [(i, length), (i + 1, 0)] : [(i, length)]
+            }
+            start += length
+        }
+        return []
+    }
+
+    /// Settles a boundary caret with the caret's line box (`line`, the degenerate
+    /// marker rect): keep the candidate on that line. Without a line, an
+    /// ambiguous caret gets no rect rather than a guess.
+    static func pickCaret(_ candidates: [CGRect], line: CGRect?) -> CGRect? {
+        guard candidates.count > 1 else { return candidates.first }
+        guard let line else { return nil }
+        let onLine = candidates.filter { $0.midY >= line.minY && $0.midY <= line.maxY }
+        return onLine.count == 1 ? onLine[0] : nil
+    }
+
+    private static func staticTextCaretRect(_ element: AXUIElement, caret: Int, line: CGRect?) -> CGRect? {
+        var runs: [(element: AXUIElement, length: Int)] = []
+        collectStaticText(in: element, into: &runs, depth: 0)
+        let candidates = runLocations(caret: caret, runLengths: runs.map(\.length)).compactMap {
+            caretRect(inRun: runs[$0.run].element, offset: $0.offset)
+        }
+        return pickCaret(candidates, line: line)
+    }
+
+    private static func caretRect(inRun leaf: AXUIElement, offset: Int) -> CGRect? {
+        if offset > 0, let char = boundsForRange(leaf, location: offset - 1, length: 1),
+           isValidCaretRect(char) {
+            return CGRect(x: char.maxX, y: char.minY, width: 1, height: char.height)
+        }
+        if offset == 0, let char = boundsForRange(leaf, location: 0, length: 1),
+           isValidCaretRect(char) {
+            return CGRect(x: char.minX, y: char.minY, width: 1, height: char.height)
+        }
+        return nil
+    }
+
+    /// Depth-first AXStaticText leaves (UTF-16 lengths, the unit AX offsets use).
+    private static func collectStaticText(in element: AXUIElement,
+                                          into runs: inout [(element: AXUIElement, length: Int)],
+                                          depth: Int) {
+        guard depth < 8, runs.count < 200 else { return }
+        for child in children(of: element) {
+            if role(of: child) == (kAXStaticTextRole as String) {
+                if let text = stringValue(of: child), !text.isEmpty {
+                    runs.append((child, text.utf16.count))
+                }
+            } else {
+                collectStaticText(in: child, into: &runs, depth: depth + 1)
+            }
+        }
+    }
+
+    private static func lineIsEmptyBeforeCaret(_ element: AXUIElement, caret: Int) -> Bool {
+        guard let full = stringValue(of: element) as NSString? else { return false }
+        let caret = min(max(caret, 0), full.length)
+        let before = full.substring(to: caret)
+        return (before.split(separator: "\n", omittingEmptySubsequences: false).last ?? "").isEmpty
     }
 
     /// The x where the caret's paragraph starts (Quartz global): the left edge of
