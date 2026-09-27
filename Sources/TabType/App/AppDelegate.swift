@@ -260,9 +260,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             let view = SettingsView().environmentObject(settings).environmentObject(provider)
             let hosting = NSHostingController(rootView: view)
             let window = NSWindow(contentViewController: hosting)
-            // SwiftUI's navigationTitle only reaches the window on a selection
-            // change, so seed it with the item the window opens on.
-            window.title = (SettingsNavigator.shared.pending?.item ?? .suggestions).rawValue
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.setContentSize(NSSize(width: SettingsNavigator.shared.desiredContentWidth, height: 620))
             window.minSize = NSSize(width: 760, height: 460)
@@ -277,6 +274,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                 .sink { [weak self] width in self?.resizeSettings(toContentWidth: width) }
                 .store(in: &cancellables)
         }
+        // SwiftUI's navigationTitle only reaches the window on a selection change,
+        // so set it to the item this open lands on (also when the window is reused).
+        if let item = SettingsNavigator.shared.pending?.item { settingsWindow?.title = item.rawValue }
         // Give TabType a Dock icon + Cmd-Tab entry while Settings is open — as a
         // menu-bar-only (.accessory) app, clicking another app would otherwise send
         // this window behind it with no way back except reopening from the menu bar.

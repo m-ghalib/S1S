@@ -1,36 +1,37 @@
 import SwiftUI
 
-/// What TabType is allowed to read for extra context, grouped the way Cotypist's own
-/// Context pane is (Screenshot Settings / Clipboard Settings) rather than folded into
-/// Personalization.
+/// What TabType is allowed to read for extra context. Shown as the Context row
+/// of the Apps list.
 struct ContextPane: View {
     @EnvironmentObject var settings: AppSettings
 
     var body: some View {
         Section {
             Toggle("Read on-screen context", isOn: $settings.useScreenContext)
-            Text("Reads the conversation or document around your cursor — via the accessibility tree in chat apps, or an on-device screenshot elsewhere — so suggestions match what you're working on. Chat apps like Slack and Claude always use this.")
-                .font(.caption).foregroundStyle(.secondary)
-            Text("TabType picks a context recipe per app: the conversation in chat apps and chat websites (accessibility tree, no screenshots), your document in writing apps, and nearby on-screen text elsewhere. Open the Apps section to see exactly what applies to each app — and to change it.")
-                .font(.caption).foregroundStyle(.secondary)
+                .help("TabType picks a context recipe per app: the conversation in chat apps and chat websites (accessibility tree, no screenshots), your document in writing apps, and nearby on-screen text elsewhere. Select an app in the list to see and change what applies to it.")
             Picker("Screenshot extraction mode", selection: $settings.screenCropMode) {
                 ForEach(AppSettings.ScreenCropMode.allCases, id: \.self) { mode in
                     Text(mode.rawValue).tag(mode)
                 }
             }
             .disabled(!settings.useScreenContext)
-            Text("Applies only when falling back to screenshot OCR. Caret-Aware focuses on the text around your cursor; Columnar helps with multi-column windows.")
-                .font(.caption).foregroundStyle(.secondary)
-            Toggle("Use screenshots to improve suggestion appearance", isOn: $settings.useScreenshotAppearance)
-            Text("Samples the color around the caret so ghost text blends with the field's real text. May occasionally show a Screen Recording indicator in the menu bar.")
-                .font(.caption).foregroundStyle(.secondary)
+            .help("Applies only when falling back to screenshot OCR. Caret-Aware focuses on the text around your cursor; Columnar helps with multi-column windows.")
         } header: {
             PaneHeader(anchor: .context, subtitle: "Screen Context")
+        } footer: {
+            Footnote("Reads the text around your cursor so suggestions match your work. Chat apps like Slack and Claude always use this.")
         }
-        Section("Clipboard Settings") {
+        Section {
+            Toggle("Use screenshots to improve suggestion appearance", isOn: $settings.useScreenshotAppearance)
+        } footer: {
+            Footnote("Samples the color around the caret so ghost text matches the field. May show the Screen Recording indicator.")
+        }
+        Section {
             Toggle("Use clipboard for context", isOn: $settings.useClipboardContext)
-            Text("Reads your clipboard to understand what you're working with. Processed locally; never stored or sent anywhere.")
-                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            Text("Clipboard Settings")
+        } footer: {
+            Footnote("Reads your clipboard to understand your work. Processed locally, never stored or sent.")
         }
     }
 }
@@ -62,30 +63,34 @@ struct TextToolsPane: View {
             .onChange(of: settings.autocorrectLanguage) { _, lang in
                 SpellChecker.shared.loadIfNeeded(language: lang)
             }
-            Text("When you finish a word, clear typos are corrected in place (e.g. \"teh\" → \"the\"). Never in password fields.")
-                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            PaneHeader(anchor: .textTools, subtitle: "Autocorrect")
+        } footer: {
+            Footnote("Corrects clear typos in place when you finish a word, for example \"teh\" → \"the\". Never in password fields.")
+        }
+        Section {
             Toggle("Don't suggest while a word is misspelled", isOn: $settings.skipOnTypo)
                 .onChange(of: settings.skipOnTypo) { _, on in
                     if on { SpellChecker.shared.loadIfNeeded(language: settings.autocorrectLanguage) }
                 }
-            Text("Pauses completions when the word at the cursor looks like a typo, instead of suggesting its corrected form.")
-                .font(.caption).foregroundStyle(.secondary)
-        } header: {
-            PaneHeader(anchor: .textTools, subtitle: "Autocorrect")
+        } footer: {
+            Footnote("Pauses completions while the word at the cursor looks like a typo.")
         }
-        Section("Macros") {
+        Section {
             Toggle("Inline macros", isOn: $settings.macrosEnabled)
-            Text("Type `/` then a command and press Tab:")
-                .font(.caption).foregroundStyle(.secondary)
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {
                 macroRow("/date, /time, /now", "current date / time")
                 macroRow("/uuid, /dice, /coin", "random value")
-                macroRow("/random 100", "random 0–100")
+                macroRow("/random 100", "random 0-100")
                 macroRow("10km->mi", "unit conversion")
                 macroRow("2+2*3", "arithmetic")
             }
             .font(.caption)
             .padding(.top, 2)
+        } header: {
+            Text("Macros")
+        } footer: {
+            Footnote("Type `/` and a command, then press Tab.")
         }
     }
 
@@ -109,26 +114,24 @@ struct ShortcutsPane: View {
             KeyRecorderRow(title: "Force a suggestion", binding: $settings.forceActivateKey)
             KeyRecorderRow(title: "Pause in current app (5 min)", binding: $settings.appPauseKey)
             KeyRecorderRow(title: "Enable/disable TabType", binding: $settings.toggleKey, allowNone: true)
-            Text("Hold ⌥ with the accept key to send the real key to the app (e.g. ⌥Tab moves between form fields while a suggestion is shown).")
-                .font(.caption).foregroundStyle(.secondary)
         } header: {
             PaneHeader(anchor: .shortcuts)
+        } footer: {
+            Footnote("Click a shortcut, then press the new keys. Hold ⌥ while accepting to send the real key, for example ⌥Tab to move between fields.")
         }
-        Section("Accepting a word") {
+        Section {
             Toggle("Include trailing space", isOn: $settings.includeTrailingSpace)
             Toggle("Include trailing punctuation", isOn: $settings.includeTrailingPunctuation)
-            Text("When off, punctuation attached to a word (like a period or ?) is left for a separate press.")
-                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            Text("Accepting a word")
+        } footer: {
+            Footnote("When off, punctuation after a word, like a period or ?, waits for a separate press.")
         }
         Section("Behavior") {
             Picker("When you press Escape", selection: $settings.escapeBehavior) {
                 Text("Dismiss the suggestion").tag("dismiss")
                 Text("Pause completions briefly").tag("pause")
             }
-        }
-        Section {
-            Text("Click a shortcut, then press the key combination you want. Changes take effect immediately.")
-                .font(.caption).foregroundStyle(.secondary)
         }
     }
 }
@@ -220,26 +223,15 @@ private struct KeyRecorder: NSViewRepresentable {
 struct PersonalizationPane: View {
     @EnvironmentObject var settings: AppSettings
     @State private var showingDeleteConfirm = false
+    @State private var showingResetConfirm = false
 
     var body: some View {
         Section {
             Toggle("Collect inputs for personalization", isOn: $settings.collectTypingHistory)
-            Text("TabType can record short snippets of text it monitors to improve completions. All collected data is encrypted and stored locally on your Mac — nothing is sent anywhere. Not recommended if you work with particularly sensitive information.")
-                .font(.caption).foregroundStyle(.secondary)
+                .help("TabType records short snippets of text it monitors to improve completions.")
             Toggle("Store inputs without accepted completions", isOn: $settings.storeInputsWithoutAcceptedCompletions)
                 .disabled(!settings.collectTypingHistory)
-            Text("When on, TabType stores everything it monitors, even when you don't accept a suggestion. When off, only text where you accepted a completion is stored.")
-                .font(.caption).foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Personalize word choice")
-                    Slider(value: $settings.personalizeWordChoice, in: 0...1, step: 0.05)
-                    Text(settings.personalizeWordChoice == 0 ? "Off" : String(format: "%.0f%%", settings.personalizeWordChoice * 100))
-                        .monospacedDigit().foregroundStyle(.secondary).frame(width: 40, alignment: .trailing)
-                }
-                Text("Shows the model examples of your writing: your onboarding picks at first, then completions you accept. With typing history on, it also favors words you use often. Higher values use more examples; too high may occasionally suggest a less fitting word.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+                .help("When on, TabType stores everything it monitors, even when you don't accept a suggestion. When off, only text where you accepted a completion is stored.")
             // Kept in a subview so TypingHistoryStore.shared (which reads the
             // Keychain on first touch) is only instantiated when data can exist.
             if settings.collectTypingHistory || TypingHistoryStore.historyFileExists {
@@ -247,52 +239,63 @@ struct PersonalizationPane: View {
             }
         } header: {
             PaneHeader(anchor: .personalization, subtitle: "Typing History")
+        } footer: {
+            Footnote("Collected text is encrypted and stays on this Mac. Not recommended if you work with sensitive information.")
         }
         .confirmationDialog("Delete all collected typing history?", isPresented: $showingDeleteConfirm, titleVisibility: .visible) {
             Button("Delete All", role: .destructive) { TypingHistoryStore.shared.deleteAll() }
             Button("Cancel", role: .cancel) {}
         }
-        Section("Onboarding") {
-            HStack {
-                Text("Redo the writing-style picks from first-run setup.")
-                Spacer()
+        Section {
+            LabeledContent("Personalize word choice") {
+                HStack {
+                    Slider(value: $settings.personalizeWordChoice, in: 0...1, step: 0.05)
+                    Text(settings.personalizeWordChoice == 0 ? "Off" : String(format: "%.0f%%", settings.personalizeWordChoice * 100))
+                        .monospacedDigit().foregroundStyle(.secondary).frame(width: 40, alignment: .trailing)
+                }
+            }
+            .help("Uses your onboarding picks at first, then completions you accept. With typing history on, it also favors words you use often.")
+        } footer: {
+            Footnote("Shows the model examples of your writing. Higher values use more examples but may pick a less fitting word.")
+        }
+        Section {
+            LabeledContent("Writing-style picks") {
                 Button("Redo Onboarding…") {
                     NotificationCenter.default.post(name: .tabTypeRedoOnboarding, object: nil)
                 }
             }
-            Text("Replaces your earlier choices, the writing style below, and the onboarding examples. Completions you accepted are kept.")
-                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            Text("Onboarding")
+        } footer: {
+            Footnote("Replaces your earlier picks, the writing style below, and the onboarding examples. Accepted completions are kept.")
         }
         Section {
+            TextField("Your name", text: $settings.authorName, prompt: Text("Optional"))
+            TextField("Writing style", text: $settings.writingStyle,
+                      prompt: Text("e.g. concise, friendly, British spelling"), axis: .vertical)
+                .lineLimit(2...4)
+            TextField("Custom instructions", text: $settings.customInstructions,
+                      prompt: Text("e.g. Avoid exclamation marks. Prefer plain words."), axis: .vertical)
+                .lineLimit(2...5)
+        } header: {
             HStack {
-                Text("Custom AI Instructions").font(.headline)
+                Text("Custom AI Instructions")
                 Spacer()
-                Button("Reset to Default") {
-                    settings.authorName = NSFullUserName()
-                    settings.writingStyle = ""
-                    settings.customInstructions = ""
-                }
+                Button("Reset to Defaults", role: .destructive) { showingResetConfirm = true }
+                    .buttonStyle(.borderless).font(.caption)
             }
-            TextField("Your name (optional)", text: $settings.authorName)
-                .textFieldStyle(.roundedBorder)
-            VStack(alignment: .leading) {
-                Text("Writing style").font(.caption).foregroundStyle(.secondary)
-                TextField("Writing style", text: $settings.writingStyle,
-                          prompt: Text("e.g. concise, friendly, British spelling"), axis: .vertical)
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(2...4)
+        } footer: {
+            Footnote("These shape suggestions to match your voice. Used only by the on-device model.")
+        }
+        .confirmationDialog("Reset custom AI instructions?", isPresented: $showingResetConfirm, titleVisibility: .visible) {
+            Button("Reset", role: .destructive) {
+                settings.authorName = NSFullUserName()
+                settings.writingStyle = ""
+                settings.customInstructions = ""
             }
-            VStack(alignment: .leading) {
-                Text("Custom instructions").font(.caption).foregroundStyle(.secondary)
-                TextField("Custom instructions", text: $settings.customInstructions,
-                          prompt: Text("e.g. Avoid exclamation marks. Prefer plain words."), axis: .vertical)
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(2...5)
-            }
-            Text("These shape suggestions to match your voice. Sent only to the on-device model.")
-                .font(.caption).foregroundStyle(.secondary)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your name returns to your account name. Your writing style and custom instructions are deleted.")
         }
     }
 }
@@ -305,11 +308,13 @@ private struct HistoryDataRow: View {
     @Binding var showingDeleteConfirm: Bool
 
     var body: some View {
-        LabeledContent("Existing data") {
+        LabeledContent {
             Button("Delete All…", role: .destructive) { showingDeleteConfirm = true }
                 .disabled(history.entryCount == 0 && history.pairCount == 0)
+        } label: {
+            Text("Existing data")
+            Text(summary)
         }
-        Text(summary).font(.caption).foregroundStyle(.secondary)
     }
 
     private var summary: String {
@@ -330,19 +335,21 @@ struct EmojiPane: View {
         Section {
             Toggle("Enable emoji suggestions", isOn: $settings.emojiEnabled)
             Toggle("Suggest emoji from emoticons", isOn: $settings.emoticonsEnabled)
-            Text("Type `:name` and Tab to insert 🚀, or common emoticons like :-) ;-) <3 which convert automatically.")
-                .font(.caption).foregroundStyle(.secondary)
         } header: {
             PaneHeader(anchor: .emoji)
+        } footer: {
+            Footnote("Type `:name` and press Tab to insert 🚀. Emoticons like :-) ;-) <3 convert automatically.")
         }
-        Section("Customization") {
+        Section {
             Picker("Preferred skin tone", selection: $settings.emojiSkinTone) {
                 ForEach(SkinTone.allCases, id: \.rawValue) { tone in
                     Text(tone.label).tag(tone.rawValue)
                 }
             }
-            Text("Applied to emoji that support skin-tone modifiers.")
-                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            Text("Customization")
+        } footer: {
+            Footnote("Applies to emoji that support skin-tone modifiers.")
         }
     }
 }
@@ -352,20 +359,16 @@ struct BatteryPane: View {
     @EnvironmentObject var settings: AppSettings
     var body: some View {
         Section {
-            Label(PowerMonitor.shared.isLowPower
-                  ? "Low Power Mode is on — these settings are active."
-                  : "These settings take effect while macOS Low Power Mode is on.",
-                  systemImage: "bolt")
-                .font(.callout).foregroundStyle(.secondary)
-        } header: {
-            PaneHeader(anchor: .battery)
-        }
-        Section("In Low Power Mode") {
             Toggle("Only show completions on demand", isOn: $settings.batteryOnDemandOnly)
             Toggle("Generate slightly shorter completions", isOn: $settings.batteryShorterCompletions)
             Toggle("Fall back to debounced suggestions", isOn: $settings.batteryUseDebounce)
-            Text("Reduces power draw. When Apple Intelligence is the engine, impact is minimal; this mainly helps the local model. \"Fall back to debounced suggestions\" automatically steps down from continuous generation (Suggestions ▸ General ▸ Timing) in Low Power Mode, without needing to turn it off manually.")
-                .font(.caption).foregroundStyle(.secondary)
+                .help("Steps down from continuous generation (Suggestions ▸ General ▸ Timing) while Low Power Mode is on, without turning it off.")
+        } header: {
+            PaneHeader(anchor: .battery, subtitle: "In Low Power Mode")
+        } footer: {
+            Footnote(PowerMonitor.shared.isLowPower
+                     ? "Low Power Mode is on, so these settings are active. They mainly help the local model."
+                     : "These settings apply while macOS Low Power Mode is on. They mainly help the local model.")
         }
     }
 }
@@ -373,36 +376,52 @@ struct BatteryPane: View {
 /// Local usage counters: words completed and suggestion acceptance rate.
 struct StatisticsPane: View {
     @ObservedObject var stats = Statistics.shared
+    @State private var showingResetConfirm = false
 
     var body: some View {
         Section {
-            Text("These numbers are stored only on your Mac and never leave it.")
-                .font(.callout).foregroundStyle(.secondary)
-        } header: {
-            PaneHeader(anchor: .statistics)
-        }
-        Section("Usage") {
             LabeledContent("Words completed", value: "\(stats.wordsCompleted)")
             LabeledContent("Suggestions shown", value: "\(stats.suggestionsShown)")
             LabeledContent("Suggestions accepted", value: "\(stats.suggestionsAccepted)")
             LabeledContent("Acceptance rate", value: percent(stats.acceptanceRate))
+        } header: {
+            PaneHeader(anchor: .statistics)
+        } footer: {
+            Footnote("These numbers are stored only on your Mac and never leave it.")
         }
-        Section("Suggestion Funnel") {
+        Section {
+            Button("Reset Statistics…", role: .destructive) { showingResetConfirm = true }
+        }
+        .confirmationDialog("Reset statistics?", isPresented: $showingResetConfirm, titleVisibility: .visible) {
+            Button("Reset", role: .destructive) { stats.reset() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("All usage and funnel counts are permanently deleted.")
+        }
+    }
+}
+
+/// Where suggestions drop out between a model request and the screen. A
+/// diagnostic, so it lives under Advanced rather than Statistics.
+struct FunnelSection: View {
+    @ObservedObject var stats = Statistics.shared
+
+    var body: some View {
+        Section {
             LabeledContent("Show rate", value: percent(stats.showRate))
             ForEach(Statistics.FunnelEvent.allCases, id: \.rawValue) { event in
                 LabeledContent(event.label, value: "\(stats.funnel[event] ?? 0)")
             }
-            Text("Where suggestions die between a model request and the ghost text on screen. A low show rate with high rejection counts points at over-aggressive filtering; high \"input changed\" counts point at latency.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-        Section {
-            Button("Reset Statistics", role: .destructive) { stats.reset() }
+        } header: {
+            Text("Suggestion Funnel")
+        } footer: {
+            Footnote("Where suggestions drop out before reaching the screen. Many rejections point at over-filtering; many \"input changed\" counts point at latency.")
         }
     }
+}
 
-    private func percent(_ v: Double) -> String {
-        String(format: "%.0f%%", v * 100)
-    }
+private func percent(_ v: Double) -> String {
+    String(format: "%.0f%%", v * 100)
 }
 
 struct AboutPane: View {
@@ -431,7 +450,7 @@ struct AboutPane: View {
                   systemImage: "key.slash")
         }
         Section("Open source") {
-            Text("MIT licensed. Inspired by Cotypist; built in the open, more permissive than AGPL alternatives.")
+            Text("MIT licensed. Built in the open.")
                 .font(.callout).foregroundStyle(.secondary)
         }
         Section("Third-party acknowledgments") {
@@ -445,13 +464,13 @@ struct AboutPane: View {
     }
 
     private static let acknowledgments: [(name: String, detail: String)] = [
-        ("Apple Foundation Models & Vision", "On-device AI completions and OCR — Apple Inc."),
-        ("MLX Swift", "Local model inference on Apple silicon — Apple / ml-explore"),
-        ("mlx-swift-lm", "LLM model implementations — ml-explore"),
-        ("swift-transformers", "Hugging Face model download — Hugging Face"),
-        ("Qwen2.5", "Local base models — Alibaba (Apache-2.0)"),
-        ("gemoji", "Emoji shortcode dataset — GitHub (MIT)"),
-        ("FrequencyWords", "Autocorrect frequency lists — Hermit Dave (MIT)"),
-        ("SymSpell algorithm", "Symmetric-delete spelling correction — Wolf Garbe (MIT)"),
+        ("Apple Foundation Models & Vision", "On-device AI completions and OCR (Apple Inc.)"),
+        ("MLX Swift", "Local model inference on Apple silicon (Apple, ml-explore)"),
+        ("mlx-swift-lm", "LLM model implementations (ml-explore)"),
+        ("swift-transformers", "Hugging Face model download (Hugging Face)"),
+        ("Qwen2.5", "Local base models (Alibaba, Apache-2.0)"),
+        ("gemoji", "Emoji shortcode dataset (GitHub, MIT)"),
+        ("FrequencyWords", "Autocorrect frequency lists (Hermit Dave, MIT)"),
+        ("SymSpell algorithm", "Symmetric-delete spelling correction (Wolf Garbe, MIT)"),
     ]
 }

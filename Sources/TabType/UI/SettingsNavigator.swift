@@ -86,6 +86,18 @@ final class SettingsNavigator: ObservableObject {
         SettingsDestination(item: .suggestions, anchor: axGranted && modelReady ? nil : .permissions)
     }
 
+    /// Setup is complete exactly when the plain Settings action no longer needs
+    /// to land on Permissions.
+    nonisolated static func isSetupComplete(axGranted: Bool, modelReady: Bool) -> Bool {
+        defaultDestination(axGranted: axGranted, modelReady: modelReady).anchor == nil
+    }
+
+    /// The Apps page list row that shows an anchor, or nil to leave the
+    /// selection alone (`.apps` is the page itself).
+    nonisolated static func appsListSelection(for anchor: SettingsAnchor) -> String? {
+        anchor == .context ? "__context__" : nil
+    }
+
     nonisolated static func destination(for entry: SettingsEntry, axGranted: Bool, modelReady: Bool) -> SettingsDestination {
         switch entry {
         case .settings: return defaultDestination(axGranted: axGranted, modelReady: modelReady)

@@ -46,6 +46,28 @@ final class SettingsNavigationTests: XCTestCase {
         }
     }
 
+    func testAppsListSelectionForAnchors() {
+        XCTAssertEqual(SettingsNavigator.appsListSelection(for: .context), "__context__")
+        XCTAssertNil(SettingsNavigator.appsListSelection(for: .apps))
+    }
+
+    func testSetupToneForEveryCombination() {
+        XCTAssertEqual(SetupTone.for(ok: true, required: true), .ok)
+        XCTAssertEqual(SetupTone.for(ok: true, required: false), .ok)
+        XCTAssertEqual(SetupTone.for(ok: false, required: true), .warning)
+        XCTAssertEqual(SetupTone.for(ok: false, required: false), .neutral)
+    }
+
+    func testPermissionsCollapseExactlyWhenSettingsSkipsPermissions() {
+        for ax in [true, false] {
+            for model in [true, false] {
+                XCTAssertEqual(SettingsNavigator.isSetupComplete(axGranted: ax, modelReady: model),
+                               SettingsNavigator.defaultDestination(axGranted: ax, modelReady: model).anchor == nil)
+            }
+        }
+        XCTAssertTrue(SettingsNavigator.isSetupComplete(axGranted: true, modelReady: true))
+    }
+
     func testOnlyAppsGetsTheWideWindow() {
         XCTAssertEqual(SettingsNavigator.contentWidth(for: .apps), 980)
         for item in SettingsItem.allCases where item != .apps {

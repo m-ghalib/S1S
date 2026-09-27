@@ -54,16 +54,8 @@ struct SettingsView: View {
                 ShortcutsPane()
             }
         case .apps:
-            SettingsPage(item: .apps, target: $scrollTarget) {
-                Section {
-                    AppsSettingsView()
-                        .frame(height: 460)
-                        .listRowInsets(EdgeInsets())
-                } header: {
-                    PaneHeader(anchor: .apps)
-                }
-                ContextPane()
-            }
+            // Fills the page directly: its list and detail each scroll on their own.
+            AppsSettingsView(target: $scrollTarget)
         case .modelAndPower:
             SettingsPage(item: .modelAndPower, target: $scrollTarget) {
                 ModelSettingsView()
@@ -177,31 +169,37 @@ struct GeneralSettingsView: View {
             GhostPreview(opacity: settings.ghostOpacity)
                 .listRowInsets(EdgeInsets())
                 .padding(.vertical, 4)
-            HStack {
-                Text("Ghost text opacity")
+            LabeledContent("Ghost text opacity") {
                 Slider(value: $settings.ghostOpacity, in: 0.2...1.0)
             }
-            Toggle("Text mirroring in web apps", isOn: $settings.textMirroring)
-            Text("Redraws your last word together with the suggestion on a matching backdrop, so both align perfectly in apps like Slack or Claude. Turn off to use plain ghost text everywhere.")
-                .font(.caption).foregroundStyle(.secondary)
         }
 
-        Section("Timing") {
+        Section {
+            Toggle("Text mirroring in web apps", isOn: $settings.textMirroring)
+        } footer: {
+            Footnote("Redraws your last word with the suggestion on a matching backdrop so both align in apps like Slack. Turn off for plain ghost text.")
+        }
+
+        Section {
             Toggle("Suggest continuously while typing", isOn: $settings.continuousGeneration)
-            Text(settings.continuousGeneration
-                 ? "Requests a suggestion on nearly every keystroke, so completions keep pace with fast typing. Uses more CPU while actively typing. Web apps like Slack or Claude always wait for a brief pause regardless."
-                 : "Waits for a pause in typing before requesting a suggestion.")
-                .font(.caption).foregroundStyle(.secondary)
+                .help("Requests a suggestion on nearly every keystroke so completions keep pace with fast typing. Web apps like Slack or Claude always wait for a brief pause.")
             if !settings.continuousGeneration {
-                HStack {
-                    Text("Suggestion delay")
-                    Slider(value: Binding(
-                        get: { Double(settings.debounceMs) },
-                        set: { settings.debounceMs = Int($0) }), in: 40...600, step: 20)
-                    Text("\(settings.debounceMs) ms").monospacedDigit()
-                        .foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
+                LabeledContent("Suggestion delay") {
+                    HStack {
+                        Slider(value: Binding(
+                            get: { Double(settings.debounceMs) },
+                            set: { settings.debounceMs = Int($0) }), in: 40...600, step: 20)
+                        Text("\(settings.debounceMs) ms").monospacedDigit()
+                            .foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
+                    }
                 }
             }
+        } header: {
+            Text("Timing")
+        } footer: {
+            Footnote(settings.continuousGeneration
+                     ? "Suggests on nearly every keystroke. Uses more CPU while you type."
+                     : "Waits for a pause in typing before suggesting.")
         }
     }
 }
@@ -222,11 +220,10 @@ struct ModelSettingsView: View {
                 Text("Automatic").tag(EngineChoice.auto)
             }
             .pickerStyle(.radioGroup)
-            Label("The local model runs entirely on this Mac and never needs a network connection. Apple Intelligence is available as an alternative if you prefer it.",
-                  systemImage: "cpu")
-                .font(.caption).foregroundStyle(.secondary)
         } header: {
             PaneHeader(anchor: .engine, subtitle: "Engine")
+        } footer: {
+            Footnote("The local model runs entirely on this Mac and needs no network. Apple Intelligence is an alternative.")
         }
 
         Section("Local model") {
@@ -259,8 +256,7 @@ struct ModelSettingsView: View {
         } header: {
             Text("Recommended")
         } footer: {
-            Text("Recommended for this Mac: \(HardwareInfo.recommendationReason).")
-                .font(.caption)
+            Footnote("Recommended for this Mac: \(HardwareInfo.recommendationReason).")
         }
 
         Section {
@@ -268,20 +264,22 @@ struct ModelSettingsView: View {
         } header: {
             Text("Other Models")
         } footer: {
-            Text("Instruct models continue text well but may occasionally reply instead of continuing it. Models on disk: \(ModelStorage.formatted(ModelStorage.totalUsed())).")
-                .font(.caption)
+            Footnote("Instruct models continue text well but may occasionally reply instead. Models on disk: \(ModelStorage.formatted(ModelStorage.totalUsed())).")
                 .id(storageTick)
         }
 
-        Section("Custom Hugging Face model") {
+        Section {
             HStack {
-                TextField("mlx-community/…", text: $customId)
+                TextField("Model ID", text: $customId, prompt: Text("mlx-community/…"))
+                    .labelsHidden()
                     .textFieldStyle(.roundedBorder)
                 Button("Load") { select(customId) }
                     .disabled(customId.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            Text("Any MLX-format text model from Hugging Face.")
-                .font(.caption).foregroundStyle(.secondary)
+        } header: {
+            Text("Custom Hugging Face model")
+        } footer: {
+            Footnote("Any MLX-format text model from Hugging Face.")
         }
 
         Section("Storage") {
@@ -372,14 +370,15 @@ struct ModelSettingsView: View {
 
 // MARK: - Apps
 
-/// Per-app override editor: a searchable app list on the left, a detail form of
-/// tri-state overrides on the right — matching Cotypist's App Settings pane.
+/// The Apps page: a searchable list of running apps plus Websites and Context
+/// rows on the left, the selected row's form on the right.
 struct AppsSettingsView: View {
     @EnvironmentObject var settings: AppSettings
+    /// The section navigation should show; applied as a list selection, then cleared.
+    @Binding var target: SettingsAnchor?
     @State private var apps: [RunningApp] = []
     @State private var search = ""
     @State private var selected: String?
-    @State private var showingDomains = false
 
     struct RunningApp: Identifiable {
         let id: String       // bundle id
@@ -401,7 +400,7 @@ struct AppsSettingsView: View {
                 .padding(8)
                 Divider()
                 List(selection: $selected) {
-                    Section("Apps") {
+                    Section("Running apps") {
                         ForEach(filteredApps) { app in
                             HStack(spacing: 8) {
                                 if let icon = app.icon {
@@ -421,6 +420,8 @@ struct AppsSettingsView: View {
                     Section {
                         Label("Websites", systemImage: "globe")
                             .tag("__domains__")
+                        Label("Context", systemImage: "text.viewfinder")
+                            .tag("__context__")
                     }
                 }
                 .listStyle(.sidebar)
@@ -433,6 +434,8 @@ struct AppsSettingsView: View {
             Group {
                 if selected == "__domains__" {
                     DomainsPane()
+                } else if selected == "__context__" {
+                    Form { ContextPane() }.formStyle(.grouped)
                 } else if let id = selected, let app = apps.first(where: { $0.id == id }) {
                     AppOverrideDetail(app: app, override: overrideBinding(for: id))
                 } else {
@@ -443,7 +446,17 @@ struct AppsSettingsView: View {
             }
             .frame(minWidth: 300, maxWidth: .infinity, maxHeight: .infinity)
         }
-        .onAppear(perform: reload)
+        .onAppear {
+            reload()
+            applyTarget()
+        }
+        .onChange(of: target) { _, _ in applyTarget() }
+    }
+
+    private func applyTarget() {
+        guard let anchor = target, anchor.item == .apps else { return }
+        if let row = SettingsNavigator.appsListSelection(for: anchor) { selected = row }
+        target = nil
     }
 
     private func overrideBinding(for id: String) -> Binding<AppOverride> {
@@ -517,6 +530,7 @@ private struct TriStatePicker: View {
 private struct AppOverrideDetail: View {
     let app: AppsSettingsView.RunningApp
     @Binding var override: AppOverride
+    @State private var showingResetConfirm = false
 
     /// The RESOLVED policy (built-ins + this override) — the card below always
     /// tells the truth, including the effect of edits made right here.
@@ -549,11 +563,16 @@ private struct AppOverrideDetail: View {
                 }
                 .padding(.vertical, 2)
             }
-            Section("Context") {
+            Section {
                 TriStatePicker(title: "Read conversation (accessibility)",
                                value: $override.readConversation)
-                Text("Reads the visible conversation via the accessibility tree and keeps context always on — the treatment chat apps get. Turn on for any messaging-like app TabType doesn't recognize.")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .help("Reads the visible conversation through the accessibility tree and keeps context always on, as chat apps do.")
+            } header: {
+                Text("Context")
+            } footer: {
+                Footnote("Turn on for messaging apps that TabType does not recognize.")
+            }
+            Section {
                 Picker("Context size", selection: Binding(
                     get: { override.contextSize ?? "default" },
                     set: { override.contextSize = $0 == "default" ? nil : $0 }
@@ -563,40 +582,54 @@ private struct AppOverrideDetail: View {
                     Text("Small (\(300.formatted()) characters)").tag("small")
                     Text("Large (\(AppPolicyStore.chatContextCap.formatted()) characters)").tag("large")
                 }
-                Text("How much surrounding text (conversation/screen) is given to the model in this app.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } footer: {
+                Footnote("How much surrounding text the model gets in this app.")
             }
-            Section("Completions") {
+            Section {
                 TriStatePicker(title: "Enable completions", value: $override.enabled)
                 TriStatePicker(title: "Mid-line completions", value: $override.midLineEnabled)
-                Text("Mid-line: show completions even when there's text after the cursor on the same line.")
-                    .font(.caption).foregroundStyle(.secondary)
                 TriStatePicker(title: "Autocorrect", value: $override.autocorrectEnabled)
+            } header: {
+                Text("Completions")
+            } footer: {
+                Footnote("Mid-line completions appear even when text follows the cursor on the same line.")
+            }
+            Section {
                 TriStatePicker(title: "Disable Tab key", value: $override.disableTabKey,
                               onLabel: "Disabled", offLabel: "Enabled")
-                Text("Turn this on for apps where Tab has important native functionality (e.g. indenting, switching fields).")
-                    .font(.caption).foregroundStyle(.secondary)
+            } footer: {
+                Footnote("Disable Tab in apps that need it, for example to indent or switch fields.")
             }
-            Section("Troubleshooting") {
+            Section {
                 Toggle("Improve compatibility with this app", isOn: $override.improveCompatibility)
-                Text("If completions don't appear reliably in this app, try turning this on — it switches to clipboard-paste insertion.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text("Troubleshooting")
+            } footer: {
+                Footnote("Try this if completions do not appear reliably. It inserts text by pasting from the clipboard.")
             }
-            Section("Custom instructions") {
+            Section {
                 TextField("Custom instructions", text: $override.customInstructions,
                           prompt: Text("e.g. Use technical, concise language."), axis: .vertical)
                     .labelsHidden()
                     .lineLimit(2...5)
-                Text("Additional instructions for the model when completing text in this app.")
-                    .font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text("Custom instructions")
+            } footer: {
+                Footnote("Extra instructions for the model in this app.")
             }
             if !override.isDefault {
                 Section {
-                    Button("Reset to Default", role: .destructive) { override = AppOverride() }
+                    Button("Reset to Defaults", role: .destructive) { showingResetConfirm = true }
                 }
             }
         }
         .formStyle(.grouped)
+        .confirmationDialog("Reset \(app.name) to defaults?", isPresented: $showingResetConfirm, titleVisibility: .visible) {
+            Button("Reset", role: .destructive) { override = AppOverride() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("All custom settings and instructions for this app are deleted.")
+        }
         .id(app.id)
     }
 }
@@ -609,28 +642,24 @@ private struct DomainsPane: View {
     var body: some View {
         Form {
             Section {
-                Text("Suggestions are disabled on these domains (and subdomains) in browsers.")
-                    .font(.callout).foregroundStyle(.secondary)
-            }
-            Section("Built-in chat websites") {
-                Text("On these sites, TabType reads the visible conversation via the accessibility tree (like a chat app) so suggestions follow the discussion. Add a rule below to disable a site instead.")
-                    .font(.caption).foregroundStyle(.secondary)
                 ForEach(Array(AppPolicyStore.chatDomains).sorted(), id: \.self) { domain in
                     HStack {
                         Image(systemName: "bubble.left.and.bubble.right")
                             .foregroundStyle(.blue)
                         Text(domain)
                         Spacer()
-                        Text("Chat").font(.caption2).fontWeight(.medium)
-                            .padding(.horizontal, 5).padding(.vertical, 1)
-                            .background(Color.blue.opacity(0.18), in: Capsule())
-                            .foregroundStyle(.blue)
+                        ProfileBadge(profile: .chat)
                     }
                 }
+            } header: {
+                Text("Built-in chat websites")
+            } footer: {
+                Footnote("On these sites, TabType reads the visible conversation, as in chat apps. Add a site below to disable it instead.")
             }
-            Section("Disabled websites") {
+            Section {
                 HStack {
-                    TextField("e.g. mail.google.com", text: $newDomain)
+                    TextField("Domain", text: $newDomain, prompt: Text("e.g. mail.google.com"))
+                        .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                         .onSubmit(addDomain)
                     Button("Add", action: addDomain)
@@ -647,15 +676,19 @@ private struct DomainsPane: View {
                         .buttonStyle(.borderless)
                     }
                 }
+            } header: {
+                Text("Disabled websites")
+            } footer: {
+                Footnote("Suggestions are off on these domains and their subdomains in browsers.")
             }
-            Section("Website instructions") {
-                Text("Tune suggestions per website — e.g. a different language or tone on a specific site. Applied on top of app settings.")
-                    .font(.caption).foregroundStyle(.secondary)
+            Section {
                 HStack {
-                    TextField("Domain (e.g. linkedin.com)", text: $newInstructionDomain)
+                    TextField("Domain", text: $newInstructionDomain, prompt: Text("e.g. linkedin.com"))
+                        .labelsHidden()
                         .textFieldStyle(.roundedBorder)
-                        .frame(width: 190)
-                    TextField("Instructions (e.g. Formal tone, no emoji)", text: $newInstructionText)
+                        .frame(width: 150)
+                    TextField("Instructions", text: $newInstructionText, prompt: Text("e.g. Formal tone, no emoji"))
+                        .labelsHidden()
                         .textFieldStyle(.roundedBorder)
                     Button("Add", action: addDomainInstructions)
                         .disabled(newInstructionDomain.trimmingCharacters(in: .whitespaces).isEmpty
@@ -677,6 +710,10 @@ private struct DomainsPane: View {
                         .buttonStyle(.borderless)
                     }
                 }
+            } header: {
+                Text("Website instructions")
+            } footer: {
+                Footnote("Tune suggestions per website, for example language or tone. Applied on top of app settings.")
             }
         }
         .formStyle(.grouped)
@@ -718,51 +755,63 @@ private struct DomainsPane: View {
 
 struct AdvancedSettingsView: View {
     @EnvironmentObject var settings: AppSettings
+    @State private var showingResetConfirm = false
 
     var body: some View {
         Section {
-            HStack {
-                Text("Creativity (temperature)")
-                Slider(value: $settings.temperature, in: 0.0...1.0, step: 0.05)
-                Text(String(format: "%.2f", settings.temperature)).monospacedDigit()
-                    .foregroundStyle(.secondary).frame(width: 44, alignment: .trailing)
+            LabeledContent("Creativity (temperature)") {
+                HStack {
+                    Slider(value: $settings.temperature, in: 0.0...1.0, step: 0.05)
+                    Text(String(format: "%.2f", settings.temperature)).monospacedDigit()
+                        .foregroundStyle(.secondary).frame(width: 44, alignment: .trailing)
+                }
             }
-            Stepper(value: $settings.maxTokens, in: 6...48, step: 2) {
-                LabeledContent("Max tokens generated", value: "\(settings.maxTokens)")
+            LabeledContent("Max tokens generated") {
+                HStack {
+                    Text("\(settings.maxTokens)").monospacedDigit().foregroundStyle(.secondary)
+                    Stepper("Max tokens generated", value: $settings.maxTokens, in: 6...48, step: 2)
+                        .labelsHidden()
+                }
             }
-            Text("A hard ceiling on generation length — General's \"Completion length\" already controls the typical suggestion length you'll see; you usually don't need to change this.")
-                .font(.caption).foregroundStyle(.secondary)
-            HStack {
-                Text("Context window")
-                Slider(value: Binding(
-                    get: { Double(settings.contextChars) },
-                    set: { settings.contextChars = Int($0) }), in: 100...2400, step: 50)
-                Text("\(settings.contextChars)").monospacedDigit()
-                    .foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
+            .help("A hard ceiling on generation length. Completion length in General already sets the typical length, so you rarely need to change this.")
+            LabeledContent("Context window") {
+                HStack {
+                    Slider(value: Binding(
+                        get: { Double(settings.contextChars) },
+                        set: { settings.contextChars = Int($0) }), in: 100...2400, step: 50)
+                    Text("\(settings.contextChars)").monospacedDigit()
+                        .foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
+                }
             }
         } header: {
             PaneHeader(anchor: .advanced, subtitle: "Generation")
+        } footer: {
+            Footnote("Max tokens is a hard ceiling. Completion length in General sets the usual length.")
         }
-        Section("Diagnostics") {
+        Section {
             Toggle("Verbose logging", isOn: $settings.verboseLog)
-            Text("Writes your typed text and model output to the log file in plain text.")
-                .font(.caption).foregroundStyle(.secondary)
             Button("Open Log in Console") {
                 NSWorkspace.shared.open(Log.fileURL)
             }
+        } header: {
+            Text("Diagnostics")
+        } footer: {
+            Footnote("Verbose logging writes your typed text and model output to the log file in plain text.")
         }
+        FunnelSection()
         Section {
-            Label("TabType runs 100% locally. Your text never leaves this Mac.",
-                  systemImage: "lock.shield")
-                .font(.callout).foregroundStyle(.secondary)
+            Button("Reset to Defaults", role: .destructive) { showingResetConfirm = true }
         }
-        Section {
-            Button("Reset to Defaults", role: .destructive) {
+        .confirmationDialog("Reset Advanced settings to defaults?", isPresented: $showingResetConfirm, titleVisibility: .visible) {
+            Button("Reset", role: .destructive) {
                 settings.temperature = 0.1
                 settings.maxTokens = 28
                 settings.contextChars = 1200
                 settings.verboseLog = false
             }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your temperature, max tokens, context window, and verbose logging choices are replaced.")
         }
     }
 }

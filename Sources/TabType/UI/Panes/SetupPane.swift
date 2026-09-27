@@ -15,48 +15,52 @@ private struct SetupSignals: DynamicProperty {
     }
 }
 
+/// How a setup row reads: done, missing but required (needs attention), or
+/// missing and optional.
+enum SetupTone: Equatable {
+    case ok, warning, neutral
+
+    static func `for`(ok: Bool, required: Bool) -> SetupTone {
+        ok ? .ok : (required ? .warning : .neutral)
+    }
+
+    var icon: String {
+        switch self {
+        case .ok: return "checkmark.circle.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .neutral: return "circle"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .ok: return .green
+        case .warning: return .orange
+        case .neutral: return .secondary
+        }
+    }
+}
+
 /// Top of Suggestions: every grant and the macOS conflict fix, each with its
 /// action. Model download lives in Model & Power; this only links there.
+/// Once setup is complete the rows fold behind a single summary row.
 struct PermissionsSections: View {
     @EnvironmentObject var settings: AppSettings
     @EnvironmentObject var provider: ModelProvider
     private var signals = SetupSignals()
     private let poll = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
+    private var complete: Bool {
+        SettingsNavigator.isSetupComplete(axGranted: signals.trusted, modelReady: provider.isModelReady)
+    }
+
     var body: some View {
         Section {
-            SetupRow(ok: signals.trusted, title: "Accessibility permission",
-                     detail: "Required — lets TabType read the field you're typing in and insert completions.") {
-                grantControl(signals.trusted) { _ = AccessibilityBridge.requestTrust() }
-            }
-            SetupRow(ok: signals.screenOK, title: "Screen Recording permission",
-                     detail: "Optional — better context in non-chat apps. Screenshots are processed locally and never stored or sent anywhere.") {
-                grantControl(signals.screenOK) { _ = ScreenContextProvider.shared.requestPermission() }
-            }
-            SetupRow(ok: settings.disableMacOSPredictiveText, title: "macOS text suggestions",
-                     detail: settings.disableMacOSPredictiveText
-                        ? "Built-in inline suggestions are off, so they can't conflict with TabType. Log out and back in to fully apply."
-                        : "Disable the built-in inline suggestions to avoid conflicts with TabType.") {
-                if settings.disableMacOSPredictiveText {
-                    HStack(spacing: 8) {
-                        StatusPill(text: "Disabled", ok: true)
-                        Button("Undo") { settings.disableMacOSPredictiveText = false }
-                            .buttonStyle(.borderless).font(.caption)
-                    }
-                } else {
-                    Button("Disable") { settings.disableMacOSPredictiveText = true }
-                }
-            }
-            SetupRow(ok: provider.isModelReady, title: "AI model",
-                     detail: "The local model that powers completions. Download and switch models in Model & Power.") {
-                HStack(spacing: 8) {
-                    StatusPill(text: provider.setupStatusText, ok: provider.isModelReady)
-                    if !provider.isModelReady {
-                        Button("Show") {
-                            SettingsNavigator.shared.pending = SettingsDestination(item: .modelAndPower, anchor: .engine)
-                        }
-                    }
-                }
+            if complete {
+                SetupSummaryRow(complete: true)
+                DisclosureGroup("Details") { rows }
+            } else {
+                rows
             }
         } header: {
             PaneHeader(anchor: .permissions)
@@ -64,10 +68,46 @@ struct PermissionsSections: View {
         .onReceive(poll) { _ in signals.refresh() }
     }
 
+    @ViewBuilder private var rows: some View {
+        SetupRow(ok: signals.trusted, required: true, title: "Accessibility permission",
+                 detail: "Required. Lets TabType read the field you are typing in and insert completions.") {
+            grantControl(signals.trusted, required: true) { _ = AccessibilityBridge.requestTrust() }
+        }
+        SetupRow(ok: signals.screenOK, required: false, title: "Screen Recording permission",
+                 detail: "Optional. Improves context in non-chat apps. Screenshots stay on this Mac and are never stored.") {
+            grantControl(signals.screenOK, required: false) { _ = ScreenContextProvider.shared.requestPermission() }
+        }
+        SetupRow(ok: settings.disableMacOSPredictiveText, required: false, title: "macOS text suggestions",
+                 detail: settings.disableMacOSPredictiveText
+                    ? "Off, so they cannot conflict with TabType. Log out and back in to fully apply."
+                    : "Turn off the built-in inline suggestions to avoid conflicts with TabType.") {
+            if settings.disableMacOSPredictiveText {
+                HStack(spacing: 8) {
+                    StatusPill(text: "Disabled", ok: true, required: false)
+                    Button("Undo") { settings.disableMacOSPredictiveText = false }
+                        .buttonStyle(.borderless).font(.caption)
+                }
+            } else {
+                Button("Disable") { settings.disableMacOSPredictiveText = true }
+            }
+        }
+        SetupRow(ok: provider.isModelReady, required: true, title: "AI model",
+                 detail: "The local model that powers completions. Download and switch models in Model & Power.") {
+            HStack(spacing: 8) {
+                StatusPill(text: provider.setupStatusText, ok: provider.isModelReady, required: true)
+                if !provider.isModelReady {
+                    Button("Show") {
+                        SettingsNavigator.shared.pending = SettingsDestination(item: .modelAndPower, anchor: .engine)
+                    }
+                }
+            }
+        }
+    }
+
     @ViewBuilder
-    private func grantControl(_ granted: Bool, request: @escaping () -> Void) -> some View {
+    private func grantControl(_ granted: Bool, required: Bool, request: @escaping () -> Void) -> some View {
         if granted {
-            StatusPill(text: "Granted", ok: true)
+            StatusPill(text: "Granted", ok: true, required: required)
         } else {
             Button("Grant", action: request)
         }
@@ -81,36 +121,23 @@ struct SetupStatusSections: View {
     private var signals = SetupSignals()
     private let poll = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
-    private var allSet: Bool { signals.trusted && provider.isModelReady }
-
     var body: some View {
         Section {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: allSet ? "checkmark.circle.fill" : "circle.dashed")
-                    .font(.title2)
-                    .foregroundStyle(allSet ? .green : .secondary)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(allSet ? "All set!" : "Setup incomplete").font(.headline)
-                    Text(allSet
-                         ? "TabType is ready to use. Start typing in any app and press Tab to accept a suggestion."
-                         : "Fix permissions in Suggestions and the model in Model & Power.")
-                        .font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
+            SetupSummaryRow(complete: SettingsNavigator.isSetupComplete(
+                axGranted: signals.trusted, modelReady: provider.isModelReady))
+            SetupRow(ok: signals.trusted, required: true, title: "Accessibility permission", detail: "Required.") {
+                StatusPill(text: signals.trusted ? "Granted" : "Not granted", ok: signals.trusted, required: true)
             }
-            .padding(.vertical, 4)
-            SetupRow(ok: signals.trusted, title: "Accessibility permission", detail: "Required.") {
-                StatusPill(text: signals.trusted ? "Granted" : "Not granted", ok: signals.trusted)
+            SetupRow(ok: signals.screenOK, required: false, title: "Screen Recording permission", detail: "Optional.") {
+                StatusPill(text: signals.screenOK ? "Granted" : "Not granted", ok: signals.screenOK, required: false)
             }
-            SetupRow(ok: signals.screenOK, title: "Screen Recording permission", detail: "Optional.") {
-                StatusPill(text: signals.screenOK ? "Granted" : "Not granted", ok: signals.screenOK)
+            SetupRow(ok: provider.isModelReady, required: true, title: "AI model", detail: settings.modelId) {
+                StatusPill(text: provider.setupStatusText, ok: provider.isModelReady, required: true)
             }
-            SetupRow(ok: provider.isModelReady, title: "AI model", detail: settings.modelId) {
-                StatusPill(text: provider.setupStatusText, ok: provider.isModelReady)
-            }
-            SetupRow(ok: settings.disableMacOSPredictiveText, title: "macOS text suggestions", detail: "Can conflict with TabType when on.") {
-                StatusPill(text: settings.disableMacOSPredictiveText ? "Disabled" : "On", ok: settings.disableMacOSPredictiveText)
+            SetupRow(ok: settings.disableMacOSPredictiveText, required: false, title: "macOS text suggestions",
+                     detail: "Can conflict with TabType when on.") {
+                StatusPill(text: settings.disableMacOSPredictiveText ? "Disabled" : "On",
+                           ok: settings.disableMacOSPredictiveText, required: false)
             }
         } header: {
             PaneHeader(anchor: .setupStatus)
@@ -121,19 +148,40 @@ struct SetupStatusSections: View {
 
 // MARK: - Rows
 
+/// One-line verdict on setup, shared by Permissions and Setup Status.
+private struct SetupSummaryRow: View {
+    let complete: Bool
+
+    var body: some View {
+        let tone = SetupTone.for(ok: complete, required: true)
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: tone.icon).foregroundStyle(tone.color)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(complete ? "Setup complete" : "Setup incomplete").fontWeight(.medium)
+                Text(complete
+                     ? "Start typing in any app and press Tab to accept a suggestion."
+                     : "Fix permissions in Suggestions and the model in Model & Power.")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
 private struct SetupRow<Trailing: View>: View {
     let ok: Bool
+    let required: Bool
     let title: String
     let detail: String
     @ViewBuilder var trailing: Trailing
 
     var body: some View {
+        let tone = SetupTone.for(ok: ok, required: required)
         LabeledContent {
             trailing
         } label: {
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: ok ? "checkmark.circle.fill" : "circle")
-                    .foregroundStyle(ok ? .green : .secondary)
+                Image(systemName: tone.icon).foregroundStyle(tone.color)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                     Text(detail).font(.caption).foregroundStyle(.secondary)
@@ -147,11 +195,12 @@ private struct SetupRow<Trailing: View>: View {
 private struct StatusPill: View {
     let text: String
     let ok: Bool
+    let required: Bool
 
     var body: some View {
         Text(text)
             .font(.caption).fontWeight(.medium)
-            .foregroundStyle(ok ? .green : .secondary)
+            .foregroundStyle(SetupTone.for(ok: ok, required: required).color)
     }
 }
 
