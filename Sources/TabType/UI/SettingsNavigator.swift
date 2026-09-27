@@ -61,6 +61,12 @@ struct SettingsDestination: Equatable {
     var anchor: SettingsAnchor?
 }
 
+/// Tags of the non-app rows in the Apps page list.
+enum AppsListRow {
+    static let websites = "__domains__"
+    static let context = "__context__"
+}
+
 /// The ways UI outside the Settings window opens it.
 enum SettingsEntry {
     case settings, statistics, about
@@ -95,7 +101,7 @@ final class SettingsNavigator: ObservableObject {
     /// The Apps page list row that shows an anchor, or nil to leave the
     /// selection alone (`.apps` is the page itself).
     nonisolated static func appsListSelection(for anchor: SettingsAnchor) -> String? {
-        anchor == .context ? "__context__" : nil
+        anchor == .context ? AppsListRow.context : nil
     }
 
     nonisolated static func destination(for entry: SettingsEntry, axGranted: Bool, modelReady: Bool) -> SettingsDestination {

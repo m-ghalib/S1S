@@ -419,9 +419,9 @@ struct AppsSettingsView: View {
                     }
                     Section {
                         Label("Websites", systemImage: "globe")
-                            .tag("__domains__")
+                            .tag(AppsListRow.websites)
                         Label("Context", systemImage: "text.viewfinder")
-                            .tag("__context__")
+                            .tag(AppsListRow.context)
                     }
                 }
                 .listStyle(.sidebar)
@@ -432,9 +432,9 @@ struct AppsSettingsView: View {
             .frame(minWidth: 200, idealWidth: 220, maxWidth: 280, maxHeight: .infinity)
 
             Group {
-                if selected == "__domains__" {
+                if selected == AppsListRow.websites {
                     DomainsPane()
-                } else if selected == "__context__" {
+                } else if selected == AppsListRow.context {
                     Form { ContextPane() }.formStyle(.grouped)
                 } else if let id = selected, let app = apps.first(where: { $0.id == id }) {
                     AppOverrideDetail(app: app, override: overrideBinding(for: id))

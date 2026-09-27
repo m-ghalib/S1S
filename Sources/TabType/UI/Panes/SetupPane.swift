@@ -21,7 +21,8 @@ enum SetupTone: Equatable {
     case ok, warning, neutral
 
     static func `for`(ok: Bool, required: Bool) -> SetupTone {
-        ok ? .ok : (required ? .warning : .neutral)
+        if ok { return .ok }
+        return required ? .warning : .neutral
     }
 
     var icon: String {
@@ -71,11 +72,11 @@ struct PermissionsSections: View {
     @ViewBuilder private var rows: some View {
         SetupRow(ok: signals.trusted, required: true, title: "Accessibility permission",
                  detail: "Required. Lets TabType read the field you are typing in and insert completions.") {
-            grantControl(signals.trusted, required: true) { _ = AccessibilityBridge.requestTrust() }
+            grantControl(signals.trusted) { _ = AccessibilityBridge.requestTrust() }
         }
         SetupRow(ok: signals.screenOK, required: false, title: "Screen Recording permission",
                  detail: "Optional. Improves context in non-chat apps. Screenshots stay on this Mac and are never stored.") {
-            grantControl(signals.screenOK, required: false) { _ = ScreenContextProvider.shared.requestPermission() }
+            grantControl(signals.screenOK) { _ = ScreenContextProvider.shared.requestPermission() }
         }
         SetupRow(ok: settings.disableMacOSPredictiveText, required: false, title: "macOS text suggestions",
                  detail: settings.disableMacOSPredictiveText
@@ -105,9 +106,9 @@ struct PermissionsSections: View {
     }
 
     @ViewBuilder
-    private func grantControl(_ granted: Bool, required: Bool, request: @escaping () -> Void) -> some View {
+    private func grantControl(_ granted: Bool, request: @escaping () -> Void) -> some View {
         if granted {
-            StatusPill(text: "Granted", ok: true, required: required)
+            StatusPill(text: "Granted", ok: true, required: false)
         } else {
             Button("Grant", action: request)
         }
