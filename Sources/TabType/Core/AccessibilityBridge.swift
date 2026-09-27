@@ -281,16 +281,14 @@ enum AccessibilityBridge {
         return pickCaret(candidates, line: line)
     }
 
+    /// A hairline at the trailing edge of the character before `offset`, or at
+    /// the leading edge of the first character when `offset` is 0.
     private static func caretRect(inRun leaf: AXUIElement, offset: Int) -> CGRect? {
-        if offset > 0, let char = boundsForRange(leaf, location: offset - 1, length: 1),
-           isValidCaretRect(char) {
-            return CGRect(x: char.maxX, y: char.minY, width: 1, height: char.height)
-        }
-        if offset == 0, let char = boundsForRange(leaf, location: 0, length: 1),
-           isValidCaretRect(char) {
-            return CGRect(x: char.minX, y: char.minY, width: 1, height: char.height)
-        }
-        return nil
+        guard offset >= 0 else { return nil }
+        let atStart = offset == 0
+        guard let char = boundsForRange(leaf, location: atStart ? 0 : offset - 1, length: 1),
+              isValidCaretRect(char) else { return nil }
+        return CGRect(x: atStart ? char.minX : char.maxX, y: char.minY, width: 1, height: char.height)
     }
 
     /// Depth-first AXStaticText leaves (UTF-16 lengths, the unit AX offsets use).
@@ -313,7 +311,7 @@ enum AccessibilityBridge {
         guard let full = stringValue(of: element) as NSString? else { return false }
         let caret = min(max(caret, 0), full.length)
         let before = full.substring(to: caret)
-        return (before.split(separator: "\n", omittingEmptySubsequences: false).last ?? "").isEmpty
+        return before.isEmpty || before.hasSuffix("\n")
     }
 
     /// The x where the caret's paragraph starts (Quartz global): the left edge of
