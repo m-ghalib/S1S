@@ -83,9 +83,7 @@ final class SettingsNavigator: ObservableObject {
     /// Accessibility is the only required grant, and a model that is still
     /// downloading or loading counts as missing.
     nonisolated static func defaultDestination(axGranted: Bool, modelReady: Bool) -> SettingsDestination {
-        axGranted && modelReady
-            ? SettingsDestination(item: .suggestions, anchor: nil)
-            : SettingsDestination(item: .suggestions, anchor: .permissions)
+        SettingsDestination(item: .suggestions, anchor: axGranted && modelReady ? nil : .permissions)
     }
 
     nonisolated static func destination(for entry: SettingsEntry, axGranted: Bool, modelReady: Bool) -> SettingsDestination {

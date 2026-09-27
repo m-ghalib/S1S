@@ -27,13 +27,11 @@ struct PermissionsSections: View {
         Section {
             SetupRow(ok: signals.trusted, title: "Accessibility permission",
                      detail: "Required — lets TabType read the field you're typing in and insert completions.") {
-                if signals.trusted { StatusPill(text: "Granted", ok: true) }
-                else { Button("Grant") { _ = AccessibilityBridge.requestTrust() } }
+                grantControl(signals.trusted) { _ = AccessibilityBridge.requestTrust() }
             }
             SetupRow(ok: signals.screenOK, title: "Screen Recording permission",
                      detail: "Optional — better context in non-chat apps. Screenshots are processed locally and never stored or sent anywhere.") {
-                if signals.screenOK { StatusPill(text: "Granted", ok: true) }
-                else { Button("Grant") { _ = ScreenContextProvider.shared.requestPermission() } }
+                grantControl(signals.screenOK) { _ = ScreenContextProvider.shared.requestPermission() }
             }
             SetupRow(ok: settings.disableMacOSPredictiveText, title: "macOS text suggestions",
                      detail: settings.disableMacOSPredictiveText
@@ -64,6 +62,15 @@ struct PermissionsSections: View {
             PaneHeader(anchor: .permissions)
         }
         .onReceive(poll) { _ in signals.refresh() }
+    }
+
+    @ViewBuilder
+    private func grantControl(_ granted: Bool, request: @escaping () -> Void) -> some View {
+        if granted {
+            StatusPill(text: "Granted", ok: true)
+        } else {
+            Button("Grant", action: request)
+        }
     }
 }
 
@@ -148,9 +155,13 @@ private struct StatusPill: View {
     }
 }
 
-private extension ModelProvider {
+extension ModelProvider {
+    /// Setup-state view of the model: true only once `state` is `.ready`, so a
+    /// download or load in progress counts as not ready.
     var isModelReady: Bool { if case .ready = state { return true } else { return false } }
+}
 
+private extension ModelProvider {
     var setupStatusText: String {
         switch state {
         case .ready: return "Ready"

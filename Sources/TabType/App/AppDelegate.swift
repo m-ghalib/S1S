@@ -250,10 +250,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     @objc private func openSettings() { openSettingsWindow(for: .settings) }
 
     private func openSettingsWindow(for entry: SettingsEntry) {
-        var modelReady = false
-        if case .ready = provider.state { modelReady = true }
         SettingsNavigator.shared.pending = SettingsNavigator.destination(
-            for: entry, axGranted: AccessibilityBridge.isTrusted(), modelReady: modelReady)
+            for: entry, axGranted: AccessibilityBridge.isTrusted(), modelReady: provider.isModelReady)
         showSettingsWindow()
     }
 
