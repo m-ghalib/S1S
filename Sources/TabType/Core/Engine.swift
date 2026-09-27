@@ -1056,7 +1056,10 @@ final class Engine {
     /// of the partial (caller rejects), nil when there's no overlap to strip.
     nonisolated static func stripPartialOverlap(suggestion: String, partial: String,
                                                 fragment: String) -> String? {
-        guard partial.count >= 2,
+        // A lone "a" or "I" is a whole word, so "a" + "and" is a new word. Any other
+        // single letter ("r" + "review") is the start of the word being restated.
+        let isWord = partial.count == 1 && "ai".contains(partial.lowercased())
+        guard !partial.isEmpty, !isWord,
               fragment.lowercased().hasPrefix(partial.lowercased()) else { return nil }
         guard fragment.count > partial.count else {
             // Fragment IS the partial ("te" → "te" or "te and more"): drop the
@@ -1509,7 +1512,7 @@ final class Engine {
             }()
             // Info level (not verbose-only) so a misplaced ghost can be diagnosed from
             // a default log: the caret, the box it sits in, and where line 1 starts.
-            Log.shared.info("placement app=\(AccessibilityBridge.frontmostBundleId() ?? "?") new=\(isNewSuggestion) caretRect=\(caretRect) fieldRect=\(elementFrame.map { "\($0)" } ?? "nil") wrap=\(fieldRect != nil || columnRect != nil) line1X=\(String(format: "%.1f", caretRect.maxX + 1)) axFont=\(axFont != nil ? "yes(\(axFont!.pointSize)pt)" : "no, using \(base.pointSize)pt heuristic") fontFactor=\(policy.fontFactor) verticalOffset=\(policy.verticalOffset)")
+            Log.shared.info("placement app=\(AccessibilityBridge.frontmostBundleId() ?? "?") new=\(isNewSuggestion) caretRect=\(caretRect) fieldRect=\(elementFrame.map { "\($0)" } ?? "nil") wrap=\(fieldRect != nil || columnRect != nil) line1X=\(String(format: "%.1f", caretRect.minX - 2)) axFont=\(axFont != nil ? "yes(\(axFont!.pointSize)pt)" : "no, using \(base.pointSize)pt heuristic") fontFactor=\(policy.fontFactor) verticalOffset=\(policy.verticalOffset)")
 
             // Paint at a SPECIFIC caret rect and font — the occupancy retry must
             // render at the position it verified, and the ink-band probe may have

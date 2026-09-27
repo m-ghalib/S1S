@@ -177,11 +177,20 @@ struct OnboardingView: View {
     }
 
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        // macOS ignores .tint on a plain .bordered button, so draw the selection ourselves.
         Button(action: action) {
-            Text(title).font(.callout).frame(maxWidth: .infinity, minHeight: 28)
+            HStack(spacing: 4) {
+                if selected { Image(systemName: "checkmark") }
+                Text(title)
+            }
+            .font(.callout.weight(selected ? .semibold : .regular))
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .frame(maxWidth: .infinity, minHeight: 28)
+            .background(RoundedRectangle(cornerRadius: 6)
+                .fill(selected ? Color.accentColor : Color.secondary.opacity(0.12)))
+            .contentShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.bordered)
-        .tint(selected ? .accentColor : .secondary)
+        .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 

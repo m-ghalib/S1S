@@ -115,8 +115,15 @@ final class TrimmerAndTypoTests: XCTestCase {
     }
 
     func testShortPartialNotStripped() {
-        // 1-char partials are too ambiguous to strip ("a" prefixes half the dictionary).
+        // "a" is a whole word, so "and" is a new word, not a restatement.
         XCTAssertNil(Engine.stripPartialOverlap(suggestion: "and then", partial: "a", fragment: "and"))
+    }
+
+    func testStripPartialOverlapSingleLetter() {
+        // TT-019: "to r" + "review it" must become "eview it", not " review it".
+        XCTAssertEqual(Engine.stripPartialOverlap(suggestion: "review it", partial: "r", fragment: "review"),
+                       "eview it")
+        XCTAssertNil(Engine.stripPartialOverlap(suggestion: "I think", partial: "I", fragment: "I"))
     }
 
     // MARK: - MacroEngine.couldMatch

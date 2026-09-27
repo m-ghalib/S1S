@@ -94,7 +94,9 @@ final class SuggestionOverlay {
         continuation.isHidden = true
 
         let ghostColor = (color ?? NSColor.secondaryLabelColor).withAlphaComponent(opacity)
-        let padding: CGFloat = 1   // tight against the typed word, like the real text
+        // NSTextField insets its text ~2 pt, so start the label that far left of the
+        // caret's leading edge: the first glyph then lands where a typed one would (TT-013).
+        let padding: CGFloat = -(caretRect.width + 2)
 
         if let field = fieldRect, Self.isSaneFieldRect(field, caretRect: caretRect) {
             // Same split layout as the Electron column path. The old single label
@@ -145,7 +147,7 @@ final class SuggestionOverlay {
         let flippedY = NSScreen.primaryHeight - (caretRect.minY + verticalNudge + panelHeight)
         let origin = CGPoint(x: caretRect.maxX + padding, y: flippedY)
         panel.setFrame(CGRect(origin: origin,
-                              size: CGSize(width: size.width + padding, height: panelHeight)),
+                              size: CGSize(width: size.width, height: panelHeight)),
                        display: true)
         panel.orderFrontRegardless()
         return true
