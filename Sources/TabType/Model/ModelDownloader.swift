@@ -35,7 +35,7 @@ enum ModelDownloader {
             case .httpError(let name, let code):
                 return "Download of \(name) failed with HTTP \(code)."
             case .incomplete(let name, let expected, let got):
-                return "\(name) stopped early at \(got) of \(expected) bytes — will resume."
+                return "\(name) stopped early at \(got) of \(expected) bytes. Will resume."
             case .corrupt(let name, let expected, let got):
                 return "\(name) downloaded corrupt (\(got) bytes, expected \(expected))."
             }

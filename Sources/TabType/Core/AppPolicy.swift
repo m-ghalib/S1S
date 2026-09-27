@@ -103,9 +103,9 @@ extension AppPolicy {
                 ? "Reads the visible conversation via the accessibility tree (no screenshots needed)."
                 : "Reads nearby on-screen text for conversation context.")
         case .document:
-            lines.append("Treats your document as the context — reads a large window around the cursor plus the document's opening lines.")
+            lines.append("Treats your document as the context. Reads a large window around the cursor plus the document's opening lines.")
         case .codeEditor:
-            lines.append("Suggests only in sidebar chat panels — never in the code editor itself.")
+            lines.append("Suggests only in sidebar chat panels, never in the code editor itself.")
         case .standard:
             lines.append(includesScreenContext
                 ? "Uses nearby on-screen text as context when screen context is enabled."
@@ -127,7 +127,7 @@ extension AppPolicy {
             lines.append("No suggestions mid-line (only at the end of what you've typed).")
         }
         if disableTabKey {
-            lines.append("Tab is left alone here — accept with the alternative shortcut.")
+            lines.append("Tab is left alone here. Accept with the alternative shortcut.")
         }
         if !customInstructions.isEmpty {
             lines.append("Custom instructions are active for this app.")

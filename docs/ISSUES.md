@@ -52,9 +52,13 @@ Issues found during a manual test pass of a fresh local build. Each issue has an
 | [TT-010](#tt-010) | Low | Fixed | Settings window resizes on the Apps pane and does not resize back |
 | [TT-011](#tt-011) | Low | Fixed | Apps list includes TabType itself |
 | [TT-012](#tt-012) | Low | Fixed | Six compiler warnings in project sources |
-| [TT-013](#tt-013) | Low | Confirmed | Extra gap between accepted word and remaining ghost |
+| [TT-013](#tt-013) | Low | Fixed | Extra gap between accepted word and remaining ghost |
 | [TT-014](#tt-014) | Low | Fixed | Ad-hoc signed rebuilds lose the Accessibility grant |
 | [TT-015](#tt-015) | Info | Partly fixed | Most generation requests are deferred because the model is busy |
+| [TT-016](#tt-016) | High | Fixed | Claude Desktop context shows the sidebar instead of the conversation |
+| [TT-017](#tt-017) | High | Fixed | GPU memory grows to 20+ GB during a session |
+| [TT-018](#tt-018) | Medium | Fixed | Onboarding chips do not show which choices are selected |
+| [TT-019](#tt-019) | Medium | Fixed | Model restates a one-letter partial word |
 
 ---
 
@@ -307,7 +311,7 @@ Settings ▸ Apps lists TabType as an app that can be configured. TabType never 
 **Extra gap between accepted word and remaining ghost**
 
 - **Severity:** Low
-- **Status:** Confirmed. Not fixed.
+- **Status:** Fixed. Verified in TextEdit.
 
 After Tab accepted "review" in TextEdit, the gap before the remaining ghost (" it this morning…") was about 1.5 times a normal space. The document text was correct (`…to review`, no trailing space). The single-line path adds `padding` after the caret and the ghost also starts with a space, which may double the gap.
 
@@ -315,7 +319,9 @@ After Tab accepted "review" in TextEdit, the gap before the remaining ghost (" i
 
 **Cause:** Line 1 starts at `caret.maxX + padding`, which is `caret.minX + 2`. The `NSTextField` label then insets its text by about 2 pt more. Together these add about 4 pt, which is more than one space at 12 pt.
 
-**Possible fix:** Start line 1 at `caret.minX` minus the label's text inset. Check the result in Electron apps and in mirror mode, where the caret replica sits between the typed text and the ghost.
+**Fix:** `showInline` starts line 1 at `caret.minX - 2`, which cancels the label's text inset. This applies to the split-wrap path and the single-line path. Mirror mode uses `showMirror` and is not changed. The `placement` log line reports the new `line1X`.
+
+**Retest:** In TextEdit, the ghost `eview…` after `to r` starts flush against the typed `r`. After a Tab accept, the gap before ` it last night…` is one normal space. Electron apps were not retested.
 
 ## TT-014
 
@@ -414,7 +420,7 @@ Active memory was the same in both runs, so no arrays leaked. Only the cache gre
 **Onboarding chips do not show which choices are selected**
 
 - **Severity:** Medium
-- **Status:** Open
+- **Status:** Fixed. Not verified in the running app.
 
 **Steps:** Delete `onboardingProfile` and launch TabType. Click "Personalize TabType". Click Emails, Engineer, and Concise.
 
@@ -425,3 +431,66 @@ Active memory was the same in both runs, so no arrays leaked. Only the cache gre
 **Suggested fix:** Show selection with a style that macOS renders, for example `.borderedProminent` for selected chips, or a checkmark next to the title. The `.isSelected` accessibility trait is already set.
 
 **Verification note:** Found while verifying onboarding personalization through computer use. Computer use cannot request TabType, because it is a menu-bar (`.accessory`) app. The test used a temporary, uncommitted patch that launched TabType with the `.regular` activation policy.
+
+**Fix:** `OnboardingView.chip` draws its own style. A selected chip has an accent-color fill, white semibold text, and a checkmark. An unselected chip has a light gray fill.
+
+**Verification gap:** The app builds, but the chips were not checked in the running app. That check needs the temporary `.regular` activation-policy patch described above.
+
+## TT-019
+
+**Model restates a one-letter partial word**
+
+- **Severity:** Medium. Accepting the suggestion produces duplicated text.
+- **Status:** Fixed. Verified in TextEdit.
+- **Area:** `Engine.stripPartialOverlap`
+
+**Steps:** In TextEdit, type `…I had a chance to r` and wait.
+
+**Actual:** The ghost was ` review it and will share my thoughts by`. Accepting it gives "to r review".
+
+**Evidence:** `predict raw model output (pre-post-processing): "review it and will share my thoughts by"` followed by `predict -> " review it and will share my thoughts by"`.
+
+**Cause:** `stripPartialOverlap` required a partial word of at least 2 letters. With the 1-letter partial `r`, the check was skipped, and `reconcileMidWord` treated "review" as a new word and added a space.
+
+**Fix:** A 1-letter partial is now stripped too, except `a` and `I`, which are whole words ("a" + "and" stays a new word). New test: `testStripPartialOverlapSingleLetter`.
+
+**Retest:** The same text now shows `eview it last night…`, flush against the `r`.
+
+## TT-020
+
+**Settings window keeps the previous item's title after a deep link**
+
+- **Severity:** Low. Cosmetic, but the title contradicts the selected sidebar item.
+- **Status:** Fixed. Verified in the running app.
+- **Area:** `AppDelegate.showSettingsWindow`
+
+**Steps:**
+
+1. Open Settings from the menu bar. The window shows Suggestions.
+2. Leave the window open. Choose Statistics from the menu bar.
+
+**Actual:** The sidebar selects About and the page scrolls to Statistics, but the window title still says "Suggestions".
+
+**Cause:** The window title was seeded only when the window was first created. SwiftUI's `navigationTitle` reaches an AppKit-hosted window only on a selection change that SwiftUI itself drives.
+
+**Fix:** `showSettingsWindow` sets the title from the pending destination on every open, including when the window is reused.
+
+**Retest:** Settings, then Statistics with the window open: the title reads "About".
+
+## TT-021
+
+**Em dashes remain in user-visible strings outside the Settings UI files**
+
+- **Severity:** Low. Copy style only.
+- **Status:** Fixed (2026-09-27). Em dashes in `AppPolicy.summaryLines`, the `ModelCatalog` notes, and the `ModelDownloader` "stopped early" message are replaced with periods, commas, or colons. Confirmed in the built binary; not yet checked in the Settings window.
+- **Area:** `AppPolicy.summaryLines`, `ModelCatalog` model notes
+
+**Steps:** Open Apps, then select Zed. Or open Model & Power and read the model list.
+
+**Actual:** "How TabType works here" shows "Treats your document as the context — reads a large window…". Model notes include "non-thinking instruct — best quality/latency" and "Hybrid thinking-mode model — may emit reasoning".
+
+**Cause:** The Settings copy cleanup covered only the UI files. These strings come from Core and Model.
+
+**Suggested fix:** Apply the same punctuation rule (period, comma, colon, or hyphen) to `AppPolicy.summaryLines` and the `ModelCatalog` notes.
+
+**Verification gap (Settings design cleanup):** The orange "required item missing" state was not observed in the running app. The model falls back to the recommended model within about 2 seconds, and the menu does not respond during that window. `SetupTone.for(ok:required:)` is covered by unit tests. Light mode was also not captured, because switching the system appearance changes a system setting.
