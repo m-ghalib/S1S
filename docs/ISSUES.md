@@ -525,4 +525,34 @@ Active memory was the same in both runs, so no arrays leaked. Only the cache gre
 
 **Retest:** Typing `s` places the ghost after the letter (caret x 1102, previously 1093 with width 756). Clearing a typed message leaves the composer showing only "Reply". Long text that wraps places the ghost on line 2 after the last word. Tab and Esc work.
 
-**Related, not fixed:** After Tab accepts one word in Claude Desktop, the remaining ghost does not reappear. The unmodified build behaves the same way. In a multi-paragraph composer, `AXSelectedTextRange` skips the `"\n"` separators, so `textBeforeCaret` drops one character per paragraph break.
+**Related:** Word acceptance and multi-paragraph context are tracked in TT-023 and TT-024.
+
+## TT-023
+
+**Tab accepts one word but the remaining ghost disappears**
+
+- **Severity:** High. Word-by-word acceptance stops after the first word.
+- **Status:** Investigating (2026-09-27). A candidate guard is implemented; live verification is pending.
+- **Area:** `Engine.installFocusObserver`, `Engine.acceptCurrent`
+
+**Steps:** In Claude Desktop, wait for a suggestion with several words, then press Tab.
+
+**Actual:** One word is inserted. The rest of the ghost does not reappear. This also occurs in the earlier build.
+
+**Candidate change:** Ignore repeated focus notifications when the focused AX element has not changed. Previously, every focus notification cleared the saved suggestion, even if it referred to the same field. Genuine focus changes still clear it. Verbose diagnostics record acceptance lengths and the caller that clears a suggestion.
+
+**Verification:** AX identity tests cover repeated references, different elements, and lost focus. The cause is not yet confirmed in a live Tab reproduction. The computer-use tool can edit Claude in the background, while TabType follows the foreground app. Testing requires Claude to remain in the foreground.
+
+## TT-024
+
+**Claude multi-paragraph context loses characters before the cursor**
+
+- **Severity:** High. The model receives truncated input and an incorrect after-cursor suffix.
+- **Status:** Candidate fix implemented (2026-09-27). Regression tests pass; live verification is pending.
+- **Area:** `AccessibilityBridge.textAroundCaret`, `ContextReader.gather`
+
+**Cause:** Claude's raw selection offsets concatenate text runs without the paragraph separators present in `AXValue`. The old code used those offsets directly to slice the value. It also treated UTF-16 offsets as Swift character counts.
+
+**Change:** Align Claude's static text runs with the full field value, allowing only newline gaps between runs. Map the raw cursor position into that value before slicing. At paragraph boundaries, use the marker's line rectangle to choose between the previous paragraph's end and the next paragraph's start. An inconsistent or unresolved AX snapshot does not fall back to a potentially stale typing buffer. Native fields use UTF-16 offsets. Before-cursor and after-cursor context now share one text snapshot, and end-of-field checks use the same mapping.
+
+**Verification:** Regression tests cover three paragraphs, a cursor in the middle paragraph, blank paragraphs, emoji and combining characters, inline text runs, ambiguous boundaries, and stale or incomplete text runs. Live Claude prompt inspection remains pending.

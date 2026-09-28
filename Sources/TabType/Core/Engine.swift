@@ -123,6 +123,7 @@ final class Engine {
     private var accessoryToggleObserver: AnyCancellable?
     /// AX focused-element observer for the frontmost app (recreated on app switch).
     private var focusObserver: AXFocusObserver?
+    private var observedFocusedElement: AXUIElement?
 
     /// Pasteboard freshness tracking for clipboard context (see `freshClipboardText`).
     private var clipboardChangeCount = -1
@@ -270,9 +271,16 @@ final class Engine {
     /// warm the context for the NEW field before the first keystroke lands there.
     private func installFocusObserver(pid: pid_t) {
         guard pid != 0 else { focusObserver = nil; return }
+        observedFocusedElement = AccessibilityBridge.focusedElement()
         focusObserver = AXFocusObserver(pid: pid) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self else { return }
+                let focused = AccessibilityBridge.focusedElement()
+                guard !AccessibilityBridge.sameElement(self.observedFocusedElement, focused) else {
+                    Log.shared.debug("focus notification: unchanged element")
+                    return
+                }
+                self.observedFocusedElement = focused
                 if self.currentSuggestion != nil { self.clearSuggestion() }
                 if self.inlineCommand.isActive { self.inlineCommand.cancel() }
                 self.buffer = ""
@@ -1761,6 +1769,8 @@ final class Engine {
             remainder = rest
         }
 
+        Log.shared.debug("accept whole=\(whole) insertedChars=\(toInsert.count) remainderChars=\(remainder.count)")
+
         overlay.hide()
         currentSuggestion = remainder.isEmpty ? nil : remainder
         buffer += toInsert
@@ -1841,7 +1851,8 @@ final class Engine {
         accessory.show(near: windowRect)
     }
 
-    private func clearSuggestion() {
+    private func clearSuggestion(caller: String = #function) {
+        if currentSuggestion != nil { Log.shared.debug("clear suggestion caller=\(caller)") }
         debounceWork?.cancel()
         scheduleToken += 1   // invalidate any in-flight host-publish poll
         router.cancelInFlight()

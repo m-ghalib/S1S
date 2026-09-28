@@ -41,9 +41,15 @@ enum ContextReader {
         let focused = AccessibilityBridge.focusedElement()
         let window = focused.flatMap { windowOf($0) }
 
+        let text = focused.flatMap { AccessibilityBridge.textAroundCaret(of: $0) }
+        let caretReadable = focused.flatMap { AccessibilityBridge.caretOffset(of: $0) } != nil
+        // A readable field with an unresolved paragraph boundary must wait for a
+        // coherent AX snapshot; the keystroke buffer cannot repair its coordinates.
+        let unresolved = text == nil && caretReadable
+            && focused.flatMap { AccessibilityBridge.stringValue(of: $0) } != nil
         let input = resolveInput(
-            axText: focused.flatMap { AccessibilityBridge.textBeforeCaret(of: $0, maxChars: inputChars) },
-            caretReadable: focused.flatMap { AccessibilityBridge.caretOffset(of: $0) } != nil,
+            axText: unresolved ? "" : text.map { String($0.before.suffix(max(0, inputChars))) },
+            caretReadable: caretReadable,
             fallbackBuffer: fallbackBuffer, inputChars: inputChars)
 
         // Long-form: if the field holds more text than the caret window shows,
@@ -57,9 +63,7 @@ enum ContextReader {
             if !input.hasPrefix(head) { documentStart = head }
         }
 
-        let afterCursor = focused.flatMap {
-            AccessibilityBridge.textAfterCaret(of: $0, maxChars: afterChars)
-        } ?? ""
+        let afterCursor = text.map { String($0.after.prefix(max(0, afterChars))) } ?? ""
 
         let dedupKey = screenContext.isEmpty ? input : "\(screenContext.hashValue)|\(input)"
 

@@ -41,6 +41,15 @@ final class AXFocusObserver {
 /// text element, the text preceding the caret, and the caret's screen rectangle.
 enum AccessibilityBridge {
 
+    /// AX may announce focus again while editing the same field.
+    static func sameElement(_ lhs: AXUIElement?, _ rhs: AXUIElement?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil): return true
+        case let (lhs?, rhs?): return CFEqual(lhs, rhs)
+        default: return false
+        }
+    }
+
     /// Whether TabType has been granted Accessibility permission.
     static func isTrusted() -> Bool {
         AXIsProcessTrusted()
@@ -86,7 +95,7 @@ enum AccessibilityBridge {
         return value as? String
     }
 
-    /// The caret position as a character offset. Uses the selected text range's
+    /// The raw caret position in the host's AX range coordinates (UTF-16). Uses the selected text range's
     /// location (caret == zero-length selection).
     static func caretOffset(of element: AXUIElement) -> Int? {
         var value: CFTypeRef?
@@ -100,8 +109,8 @@ enum AccessibilityBridge {
     /// Whether there's text after the caret (rough proxy for "mid-line": the caret
     /// isn't at the very end of the field's content).
     static func hasTextAfterCaret(of element: AXUIElement) -> Bool {
-        guard let full = stringValue(of: element), let caret = caretOffset(of: element) else { return false }
-        return caret < full.count
+        guard caretOffset(of: element) != nil, let text = textAroundCaret(of: element) else { return false }
+        return !text.after.isEmpty
     }
 
     /// Children of an element (kAXChildren), or [] when unavailable.
@@ -143,33 +152,104 @@ enum AccessibilityBridge {
     /// field's text. Unreadable AX (common in Electron) returns false — callers use
     /// this to gate rendering that would overlap any text after the caret.
     static func caretConfirmedAtEnd(of element: AXUIElement) -> Bool {
-        guard let full = stringValue(of: element), let caret = caretOffset(of: element) else { return false }
-        return caret >= full.count
+        guard caretOffset(of: element) != nil, let text = textAroundCaret(of: element) else { return false }
+        return text.after.isEmpty
     }
 
-    /// Text immediately preceding the caret, capped at `maxChars`.
-    /// Returns nil if AX text isn't available for this element.
+    struct CaretText: Equatable {
+        var before: String
+        var after: String
+    }
+
+    /// Native AX ranges use UTF-16, not Swift Character counts.
+    static func splitText(_ full: String, caret: Int?) -> CaretText {
+        let value = full as NSString
+        let offset = min(max(caret ?? value.length, 0), value.length)
+        return CaretText(before: value.substring(to: offset), after: value.substring(from: offset))
+    }
+
+    struct ValueCaret: Equatable {
+        var run: Int
+        var localOffset: Int
+        var valueOffset: Int
+    }
+
+    /// Align the host's text runs with AXValue. Only paragraph separators may
+    /// occur between runs; a stale or mismatched tree must not shift the cursor.
+    static func valueCarets(full: String, caret: Int, runs: [String]) -> [ValueCaret] {
+        let value = Array(full.utf16)
+        var starts: [Int] = []
+        var offset = 0
+        for run in runs {
+            let units = Array(run.utf16)
+            guard !units.isEmpty else { return [] }
+            while !value.dropFirst(offset).starts(with: units),
+                  offset < value.count, value[offset] == 10 {
+                offset += 1
+            }
+            guard value.dropFirst(offset).starts(with: units) else { return [] }
+            starts.append(offset)
+            offset += units.count
+        }
+        guard value.dropFirst(offset).allSatisfy({ $0 == 10 }) else { return [] }
+        return runLocations(caret: caret, runLengths: runs.map { $0.utf16.count }).map {
+            ValueCaret(run: $0.run, localOffset: $0.offset, valueOffset: starts[$0.run] + $0.offset)
+        }
+    }
+
+    /// Read one snapshot so before/after context shares the same caret and value.
+    static func textAroundCaret(of element: AXUIElement) -> CaretText? {
+        guard let full = stringValue(of: element) else { return nil }
+        let rawCaret = caretOffset(of: element)
+        var pid: pid_t = 0
+        AXUIElementGetPid(element, &pid)
+        if NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.anthropic.claudefordesktop",
+           full.contains("\n"), let rawCaret {
+            var runs: [(element: AXUIElement, length: Int)] = []
+            collectStaticText(in: element, into: &runs, depth: 0)
+            let candidates = valueCarets(full: full, caret: rawCaret,
+                                        runs: runs.map { stringValue(of: $0.element) ?? "" })
+            let line = textMarkerCaretRect(element)
+            let positioned = candidates.compactMap { candidate -> (ValueCaret, CGRect)? in
+                guard let rect = caretRect(inRun: runs[candidate.run].element, offset: candidate.localOffset)
+                else { return nil }
+                return (candidate, rect)
+            }
+            // At a paragraph boundary, both the previous paragraph's end and the
+            // next paragraph's start share a raw offset. The marker's line chooses.
+            if Set(candidates.map(\.valueOffset)).count == 1, let candidate = candidates.first {
+                if full.utf16.count > candidate.valueOffset,
+                   full.dropFirst(splitText(full, caret: candidate.valueOffset).before.count)
+                    .allSatisfy({ $0 == "\n" }),
+                   let line, let rect = positioned.first?.1,
+                   rect.midY < line.minY || rect.midY > line.maxY {
+                    return nil // caret is on a trailing empty paragraph
+                }
+                return splitText(full, caret: candidate.valueOffset)
+            }
+            if let line {
+                let onLine = positioned.filter { $0.1.midY >= line.minY && $0.1.midY <= line.maxY }
+                if onLine.count == 1 {
+                    return splitText(full, caret: onLine[0].0.valueOffset)
+                }
+            }
+            // Empty composers have a synthetic newline but no text runs.
+            if rawCaret == 0, full.trimmingCharacters(in: .newlines).isEmpty {
+                return CaretText(before: "", after: full)
+            }
+            return nil
+        }
+        return splitText(full, caret: rawCaret)
+    }
+
+    /// Text immediately preceding the caret, capped in Swift characters.
     static func textBeforeCaret(of element: AXUIElement, maxChars: Int) -> String? {
-        guard let full = stringValue(of: element) else { return nil }
-        let caret = caretOffset(of: element) ?? full.count
-        let clampedCaret = min(max(caret, 0), full.count)
-        let chars = Array(full)
-        let start = max(0, clampedCaret - maxChars)
-        return String(chars[start ..< clampedCaret])
+        textAroundCaret(of: element).map { String($0.before.suffix(max(0, maxChars))) }
     }
 
-    /// Text immediately following the caret, capped at `maxChars` — lets the model see
-    /// what it would be inserting in front of (true fill-in-the-middle) rather than
-    /// only ever knowing what precedes the caret. Returns nil if AX text isn't
-    /// available for this element.
+    /// Text immediately following the caret, capped in Swift characters.
     static func textAfterCaret(of element: AXUIElement, maxChars: Int) -> String? {
-        guard let full = stringValue(of: element) else { return nil }
-        let caret = caretOffset(of: element) ?? full.count
-        let chars = Array(full)
-        let clampedCaret = min(max(caret, 0), chars.count)
-        let end = min(chars.count, clampedCaret + maxChars)
-        guard clampedCaret < end else { return "" }
-        return String(chars[clampedCaret ..< end])
+        textAroundCaret(of: element).map { String($0.after.prefix(max(0, maxChars))) }
     }
 
     /// Screen rectangle (Quartz/top-left origin) of the caret, for overlay placement.
