@@ -57,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             .sink { [weak self] _ in self?.applyMacOSPredictiveText() }
             .store(in: &cancellables)
 
-        Log.shared.info("TabType launched. model=\(settings.modelId) ax=\(AccessibilityBridge.isTrusted()) screen=\(ScreenContextProvider.shared.hasPermission()) emoji=\(EmojiMatcher.shared.all.count)")
+        Log.shared.info("TabType launched. version=\(ReleaseNotes.currentVersion) model=\(settings.modelId) ax=\(AccessibilityBridge.isTrusted()) screen=\(ScreenContextProvider.shared.hasPermission()) emoji=\(EmojiMatcher.shared.all.count)")
 
         // Persist the model id only once it actually finishes loading, so a failed
         // switch to a different model never leaves settings pointing at a model that
@@ -88,7 +88,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         // First-run choices and Accessibility are both required before the engine starts.
         if AccessibilityBridge.isTrusted() && settings.hasCompletedOnboarding {
             _ = engine.start()
+            announceUpdateIfNeeded(isSetUp: true)
         } else {
+            announceUpdateIfNeeded(isSetUp: false)
             showOnboarding()
             if !AccessibilityBridge.isTrusted() { waitForTrustThenStart() }
         }
@@ -164,6 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         menu.addItem(.separator())
         menu.addItem(item("Open Log", icon: "doc.text.magnifyingglass", action: #selector(openLog)))
+        menu.addItem(item("What's New", icon: "sparkles.rectangle.stack", action: #selector(openWhatsNew)))
         menu.addItem(item("About TabType", icon: "info.circle", action: #selector(openAbout)))
 
         menu.addItem(.separator())
@@ -245,6 +248,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     @objc private func openStatistics() { openSettingsWindow(for: .statistics) }
     @objc private func openAbout() { openSettingsWindow(for: .about) }
+    @objc private func openWhatsNew() { openSettingsWindow(for: .whatsNew) }
+
+    /// Opens What's New once after an update, then records this version so
+    /// rebuilds and relaunches of the same version stay quiet.
+    private func announceUpdateIfNeeded(isSetUp: Bool) {
+        let current = ReleaseNotes.currentVersion
+        let announce = ReleaseNotes.shouldAnnounce(
+            current: current, lastSeen: settings.lastSeenVersion, isSetUp: isSetUp,
+            hasNotes: ReleaseNotes.bundled.contains { $0.version == current })
+        settings.lastSeenVersion = current
+        guard announce else { return }
+        Log.shared.info("announcing release notes for \(current)")
+        openSettingsWindow(for: .whatsNew)
+    }
 
     /// The plain Settings action opens where setup state says (see `defaultDestination`).
     @objc private func openSettings() { openSettingsWindow(for: .settings) }
@@ -256,6 +273,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     private func showSettingsWindow() {
+        // Read before creating the window: its SwiftUI content can consume `pending`.
+        let item = SettingsNavigator.shared.pending?.item
         if settingsWindow == nil {
             let view = SettingsView().environmentObject(settings).environmentObject(provider)
             let hosting = NSHostingController(rootView: view)
@@ -276,7 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
         // SwiftUI's navigationTitle only reaches the window on a selection change,
         // so set it to the item this open lands on (also when the window is reused).
-        if let item = SettingsNavigator.shared.pending?.item { settingsWindow?.title = item.rawValue }
+        if let item { settingsWindow?.title = item.rawValue }
         // Give TabType a Dock icon + Cmd-Tab entry while Settings is open — as a
         // menu-bar-only (.accessory) app, clicking another app would otherwise send
         // this window behind it with no way back except reopening from the menu bar.

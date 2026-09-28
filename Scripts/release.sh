@@ -20,6 +20,16 @@ cd "$ROOT"
 APP="$ROOT/dist/TabType.app"
 PLIST="$ROOT/Resources/Info.plist"
 IDENTITY="${SIGN_IDENTITY:-TabType Dev}"
+CHANGELOG="$ROOT/Sources/TabType/Resources/CHANGELOG.md"
+# Ship optimized builds; the Debug config also instruments coverage.
+export CONFIG="${CONFIG:-Release}"
+
+# 0) The app shows its own version's notes (Settings > About > What's New), so
+#    refuse to ship a version the changelog does not describe.
+if ! grep -Eq "^## ${VERSION//./\\.}( |$)" "$CHANGELOG"; then
+    echo "ERROR: $CHANGELOG has no \"## $VERSION\" section. Add the release notes first." >&2
+    exit 1
+fi
 
 # 1) Stamp version + bump build number.
 CURRENT_BUILD="$(plutil -extract CFBundleVersion raw "$PLIST" 2>/dev/null || echo 0)"

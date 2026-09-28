@@ -34,6 +34,7 @@ let package = Package(
             resources: [
                 .process("Resources/Assets.xcassets"),
                 .process("Resources/emoji.json"),
+                .copy("Resources/CHANGELOG.md"),
                 .process("Resources/frequency_dictionary_en.txt"),
                 .process("Resources/frequency_dictionary_es.txt"),
                 .process("Resources/frequency_dictionary_fr.txt"),

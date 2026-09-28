@@ -424,6 +424,52 @@ private func percent(_ v: Double) -> String {
     String(format: "%.0f%%", v * 100)
 }
 
+/// The bundled release notes: this version's first, earlier ones collapsed.
+struct WhatsNewPane: View {
+    private let entries = ReleaseNotes.entries(upTo: ReleaseNotes.currentVersion, in: ReleaseNotes.bundled)
+
+    var body: some View {
+        Section {
+            if let latest = entries.first {
+                notes(latest)
+            } else {
+                Text("No release notes for this version.").foregroundStyle(.secondary)
+            }
+        } header: {
+            PaneHeader(anchor: .whatsNew, subtitle: entries.first.map { "Version \($0.version)" })
+        }
+        if entries.count > 1 {
+            Section {
+                DisclosureGroup("Earlier versions") {
+                    ForEach(entries.dropFirst(), id: \.version) { entry in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Version \(entry.version)").fontWeight(.medium)
+                            notes(entry)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+        }
+    }
+
+    private func notes(_ entry: ReleaseNotes.Entry) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(entry.items.enumerated()), id: \.offset) { _, item in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("•").foregroundStyle(.secondary)
+                    Text(Self.markdown(item))
+                }
+            }
+        }
+    }
+
+    /// Inline Markdown (bold, code, links); plain text if it does not parse.
+    private static func markdown(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text)) ?? AttributedString(text)
+    }
+}
+
 struct AboutPane: View {
     var body: some View {
         Section {
@@ -435,6 +481,9 @@ struct AboutPane: View {
                         Text("TabType").font(.title2).bold()
                         Text("Free, open-source, on-device autocomplete for macOS.")
                             .font(.callout).foregroundStyle(.secondary)
+                        Text("Version \(ReleaseNotes.currentVersion) (\(ReleaseNotes.currentBuild))")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .textSelection(.enabled)
                     }
                 }
             }

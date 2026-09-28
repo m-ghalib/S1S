@@ -121,6 +121,12 @@ final class AppSettings: ObservableObject {
     }
     var hasCompletedOnboarding: Bool { onboardingProfile != nil }
 
+    /// The app version that last launched, so an update can announce its notes once.
+    var lastSeenVersion: String? {
+        get { defaults.string(forKey: Keys.lastSeenVersion) }
+        set { defaults.set(newValue, forKey: Keys.lastSeenVersion) }
+    }
+
     /// Saves the profile and applies it: style summary, personalization level, and
     /// onboarding pairs. On redo this replaces the previous choices, summary, and
     /// onboarding pairs; real accepts stay.
@@ -348,6 +354,7 @@ final class AppSettings: ObservableObject {
         static let disableMacOSPredictiveText = "disableMacOSPredictiveText"
         static let authorName = "authorName"
         static let onboardingProfile = "onboardingProfile"
+        static let lastSeenVersion = "lastSeenVersion"
         static let writingStyle = "writingStyle"
         static let customInstructions = "customInstructions"
         static let collectTypingHistory = "collectTypingHistory"

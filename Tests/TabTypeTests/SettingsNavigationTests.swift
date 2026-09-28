@@ -14,7 +14,7 @@ final class SettingsNavigationTests: XCTestCase {
                        [.permissions, .general, .emoji, .textTools, .personalization, .shortcuts])
         XCTAssertEqual(SettingsItem.apps.anchors, [.apps, .context])
         XCTAssertEqual(SettingsItem.modelAndPower.anchors, [.engine, .battery, .advanced])
-        XCTAssertEqual(SettingsItem.about.anchors, [.about, .statistics, .setupStatus])
+        XCTAssertEqual(SettingsItem.about.anchors, [.about, .whatsNew, .statistics, .setupStatus])
     }
 
     func testEveryAnchorBelongsToExactlyOneItem() {
@@ -41,6 +41,8 @@ final class SettingsNavigationTests: XCTestCase {
                            SettingsDestination(item: .about, anchor: .statistics))
             XCTAssertEqual(SettingsNavigator.destination(for: .about, axGranted: ax, modelReady: model),
                            SettingsDestination(item: .about, anchor: nil))
+            XCTAssertEqual(SettingsNavigator.destination(for: .whatsNew, axGranted: ax, modelReady: model),
+                           SettingsDestination(item: .about, anchor: .whatsNew))
             XCTAssertEqual(SettingsNavigator.destination(for: .settings, axGranted: ax, modelReady: model),
                            SettingsNavigator.defaultDestination(axGranted: ax, modelReady: model))
         }

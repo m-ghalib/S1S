@@ -10,11 +10,15 @@ Every release **must** be signed with the same stable self-signed identity (`Tab
 
 ## Cutting a release
 
+In Claude Code, `/release` (skill in `.claude/skills/release/`) runs the steps below, installs the build in `/Applications`, and publishes to GitHub on request.
+
+Add a `## 0.1.0` section to `Sources/TabType/Resources/CHANGELOG.md` first. The app shows it in **Settings ▸ About ▸ What's New** and opens that page once after an update. The script refuses a version without a section.
+
 ```sh
 ./Scripts/release.sh 0.1.0
 ```
 
-This bumps the version in `Info.plist`, builds, verifies the signature is stable (not ad-hoc), and produces `dist/TabType-0.1.0.dmg` with a drag-to-Applications layout. It prints the SHA-256 and next steps.
+This bumps the version in `Info.plist`, builds with `CONFIG=Release`, verifies the signature is stable (not ad-hoc), and produces `dist/TabType-0.1.0.dmg` with a drag-to-Applications layout. It prints the SHA-256 and next steps.
 
 Then:
 

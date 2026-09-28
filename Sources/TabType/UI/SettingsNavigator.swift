@@ -26,7 +26,7 @@ enum SettingsItem: String, CaseIterable, Identifiable {
         case .suggestions: return [.permissions, .general, .emoji, .textTools, .personalization, .shortcuts]
         case .apps: return [.apps, .context]
         case .modelAndPower: return [.engine, .battery, .advanced]
-        case .about: return [.about, .statistics, .setupStatus]
+        case .about: return [.about, .whatsNew, .statistics, .setupStatus]
         }
     }
 }
@@ -45,6 +45,7 @@ enum SettingsAnchor: String, CaseIterable, Hashable {
     case battery = "Battery"
     case advanced = "Advanced"
     case about = "About"
+    case whatsNew = "What's New"
     case statistics = "Statistics"
     case setupStatus = "Setup Status"
 
@@ -69,7 +70,7 @@ enum AppsListRow {
 
 /// The ways UI outside the Settings window opens it.
 enum SettingsEntry {
-    case settings, statistics, about
+    case settings, statistics, about, whatsNew
 }
 
 /// Lets the menu bar (or other UI outside the Settings window) jump straight to a
@@ -109,6 +110,7 @@ final class SettingsNavigator: ObservableObject {
         case .settings: return defaultDestination(axGranted: axGranted, modelReady: modelReady)
         case .statistics: return SettingsDestination(item: .about, anchor: .statistics)
         case .about: return SettingsDestination(item: .about, anchor: nil)
+        case .whatsNew: return SettingsDestination(item: .about, anchor: .whatsNew)
         }
     }
 

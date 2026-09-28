@@ -7,6 +7,7 @@ On-device AI autocomplete for macOS (Swift 6, SwiftPM, MLX). Menu-bar app that s
 ```sh
 ./Scripts/build.sh app            # build + bundle dist/TabType.app (Debug; CONFIG=Release for release)
 ./Scripts/build.sh gencli         # build tabtype-gencli (model/prompt harness, no GUI)
+./Scripts/release.sh <version>    # Release build + DMG; needs a CHANGELOG section (or use /release)
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 ```
 
@@ -23,6 +24,7 @@ KeystrokeMonitor → Engine → ContextReader / ScreenContextProvider / Transcri
 - `Sources/TabType/Core/` — engine pipeline. `Engine.swift` is the orchestrator.
 - `Core/AppPolicy.swift` — per-app behavior (context recipe, font factor, offsets, enable rules).
 - `Core/SuggestionOverlay.swift` — ghost/mirror rendering, wrap logic.
+- `Resources/CHANGELOG.md` — bundled release notes, shown in Settings ▸ About ▸ What's New.
 - `Model/` — catalog, download, storage. `UI/` — Settings panes. `Settings/AppSettings.swift` — `UserDefaults.standard` keys.
 - `Sources/GenCLI/` — standalone inference harness (`--ai "prompt"` tests the Apple Intelligence path).
 - `Tests/TabTypeTests/` — put new pure logic in static helpers and add a test here.

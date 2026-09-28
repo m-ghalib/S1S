@@ -65,6 +65,7 @@ struct SettingsView: View {
         case .about:
             SettingsPage(item: .about, target: $scrollTarget) {
                 AboutPane()
+                WhatsNewPane()
                 StatisticsPane()
                 SetupStatusSections()
             }
