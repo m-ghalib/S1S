@@ -7,6 +7,11 @@ Settings > About > What's New, and opens that page once after an update.
 Bullets support inline Markdown (**bold**, `code`, links). Do not use em dashes.
 -->
 
+## 0.1.6
+
+- Renames TabType to S1S. On first launch, S1S moves over your settings, downloaded models, and typing history, so nothing downloads again.
+- Asks for Accessibility once more, because macOS treats S1S as a new app. Grant Screen Recording again too if you used it, then remove the old TabType entries in Privacy & Security.
+
 ## 0.1.5.1
 
 - Moves Macs still set to an older model to the recommended Qwen3.5 model. Custom models you entered are kept.
