@@ -7,6 +7,10 @@ Settings > About > What's New, and opens that page once after an update.
 Bullets support inline Markdown (**bold**, `code`, links). Do not use em dashes.
 -->
 
+## 0.1.5.1
+
+- Moves Macs still set to an older model to the recommended Qwen3.5 model. Custom models you entered are kept.
+
 ## 0.1.5
 
 - Switches to the newer Qwen3.5 models, and picks one that suits your Mac's chip and memory.
