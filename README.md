@@ -1,6 +1,8 @@
 <div align="center">
 
-# ⌨️ S1S
+<img src="docs/icon.png" alt="S1S app icon" width="128" height="128">
+
+# S1S
 
 ### A free, open-source, 100% on-device AI autocomplete for macOS
 
