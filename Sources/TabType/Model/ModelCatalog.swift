@@ -37,8 +37,8 @@ enum ModelCatalog {
     ]
 
     /// Models no longer offered: previous generations, and models needing more than
-    /// 15 GB of memory. Kept so anyone still using one gets the right prompt format
-    /// (`isBase`) and a readable name.
+    /// 15 GB of memory. A saved choice from this list is replaced with the
+    /// recommended model at launch (see `startupModelId`).
     static let retired: [CatalogModel] = [
         CatalogModel(id: "mlx-community/Qwen3-4B-Instruct-2507-4bit", name: "Qwen3 4B Instruct 2507", approxSize: "~2.3 GB", note: "", isBase: false),
         CatalogModel(id: "mlx-community/Qwen3-4B-Instruct-2507-6bit", name: "Qwen3 4B Instruct 2507 (6-bit)", approxSize: "~3.3 GB", note: "", isBase: false),
@@ -64,6 +64,13 @@ enum ModelCatalog {
     /// Offered and retired models, for looking up a model already in use.
     static func known(_ id: String) -> CatalogModel? {
         all.first { $0.id == id } ?? retired.first { $0.id == id }
+    }
+
+    /// The model to load at launch: the saved choice, unless it is missing or
+    /// retired, in which case the recommended model. Custom ids are kept.
+    static func startupModelId(saved: String?, recommended: String) -> String {
+        guard let saved, !retired.contains(where: { $0.id == saved }) else { return recommended }
+        return saved
     }
 
     /// The model recommended for this Mac's hardware.

@@ -241,8 +241,9 @@ final class AppSettings: ObservableObject {
         // Apple Intelligence remains available as an explicit alternate choice.
         engineChoice = EngineChoice(rawValue: defaults.string(forKey: Keys.engineChoice) ?? "") ?? .local
         // Default to the model recommended for this Mac's hardware until the user
-        // explicitly picks one.
-        modelId = defaults.string(forKey: Keys.modelId) ?? HardwareInfo.recommendedModelId
+        // explicitly picks one. A retired saved model moves to the recommended one.
+        modelId = ModelCatalog.startupModelId(saved: defaults.string(forKey: Keys.modelId),
+                                              recommended: HardwareInfo.recommendedModelId)
         // 0 = greedy ArgMax decoding: deterministic (same prompt → same suggestion)
         // and marginally faster. MLX only uses ArgMax at exactly 0 — 0.1 still
         // SAMPLES, which fed occasional low-probability first tokens straight into

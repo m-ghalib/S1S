@@ -60,10 +60,21 @@ final class ModelAdvisorTests: XCTestCase {
             XCTAssertTrue(model.id.contains("Qwen3.5") || model.id.contains("gemma-4"), model.id)
             XCTAssertFalse(model.isBase, model.id)
         }
-        // Retired models still resolve, so their prompt format and name survive.
+        // Retired models still resolve (prompt format, name) until migrated at launch.
         XCTAssertEqual(ModelCatalog.known("mlx-community/Qwen3-4B-Instruct-2507-8bit")?.isBase, false)
         XCTAssertEqual(ModelCatalog.known("mlx-community/Qwen2.5-3B-4bit")?.isBase, true)
         XCTAssertNil(ModelCatalog.known("someone/Custom-Model"))
+    }
+
+    func testStartupModelReplacesRetiredChoice() {
+        let recommended = "mlx-community/Qwen3.5-2B-4bit"
+        XCTAssertEqual(ModelCatalog.startupModelId(saved: nil, recommended: recommended), recommended)
+        XCTAssertEqual(ModelCatalog.startupModelId(saved: "mlx-community/Qwen3-4B-Instruct-2507-8bit",
+                                                   recommended: recommended), recommended)
+        XCTAssertEqual(ModelCatalog.startupModelId(saved: "mlx-community/Qwen3.5-9B-4bit",
+                                                   recommended: recommended), "mlx-community/Qwen3.5-9B-4bit")
+        XCTAssertEqual(ModelCatalog.startupModelId(saved: "someone/Custom-Model",
+                                                   recommended: recommended), "someone/Custom-Model")
     }
 
     func testChoicesAreInCatalog() {
