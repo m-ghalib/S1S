@@ -134,18 +134,33 @@ enum AccessibilityBridge {
     /// not enough — read-only static text and web areas expose it too (anything
     /// selectable does). Editability = a text-input role, or a settable value.
     static func isTextInput(_ element: AXUIElement) -> Bool {
-        var roleRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef) == .success,
-           let role = roleRef as? String {
-            let textRoles: Set<String> = [
-                kAXTextFieldRole as String, kAXTextAreaRole as String,
-                kAXComboBoxRole as String, "AXSearchField",
-            ]
-            if textRoles.contains(role) { return true }
-        }
+        let role = role(of: element)
+        if let role, textInputRoles.contains(role) { return true }
         var settable = DarwinBoolean(false)
         let err = AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable)
-        return err == .success && settable.boolValue
+        return isTextInput(role: role, valueSettable: err == .success && settable.boolValue)
+    }
+
+    private static let textInputRoles: Set<String> = [
+        kAXTextFieldRole as String, kAXTextAreaRole as String,
+        kAXComboBoxRole as String, "AXSearchField",
+    ]
+
+    /// Controls whose value is settable but is not text: typing over them
+    /// (keyboard shortcuts, game keys) must never count as writing.
+    private static let nonTextControlRoles: Set<String> = [
+        "AXSlider", "AXCheckBox", "AXRadioButton", "AXIncrementor",
+        "AXPopUpButton", "AXMenuButton", "AXScrollBar", "AXDisclosureTriangle",
+        "AXColorWell", "AXLevelIndicator", "AXValueIndicator", "AXSplitter",
+        "AXStepper", "AXSwitch", "AXToggle",
+    ]
+
+    /// Pure decision behind `isTextInput`: a text-input role, or a settable
+    /// value on something that is not a non-text control.
+    static func isTextInput(role: String?, valueSettable: Bool) -> Bool {
+        if let role, textInputRoles.contains(role) { return true }
+        if let role, nonTextControlRoles.contains(role) { return false }
+        return valueSettable
     }
 
     /// True only with POSITIVE evidence that the caret sits at the very end of the

@@ -101,8 +101,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "TabType")
-            button.image?.isTemplate = true
+            // "Ghost tail" glyph drawn by Scripts/generate-app-icon.swift.
+            let image = Bundle.module.image(forResource: "MenuBarIcon")
+                ?? NSImage(systemSymbolName: "text.cursor", accessibilityDescription: nil)
+            image?.isTemplate = true
+            image?.accessibilityDescription = "TabType"
+            button.image = image
         }
         statusItem.isVisible = settings.showMenuBarIcon
         statusMenu.delegate = self
@@ -229,9 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         }
     }
 
-    private func shortModelName(_ id: String) -> String {
-        id.split(separator: "/").last.map(String.init) ?? id
-    }
+    private func shortModelName(_ id: String) -> String { ModelAdvisor.displayName(for: id) }
 
     // MARK: - Actions
 

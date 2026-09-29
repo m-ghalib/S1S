@@ -126,25 +126,6 @@ final class TrimmerAndTypoTests: XCTestCase {
         XCTAssertNil(Engine.stripPartialOverlap(suggestion: "I think", partial: "I", fragment: "I"))
     }
 
-    // MARK: - MacroEngine.couldMatch
-
-    func testKeywordPrefixesStayAlive() {
-        XCTAssertTrue(MacroEngine.couldMatch("d"))       // → date/day/dice/datetime
-        XCTAssertTrue(MacroEngine.couldMatch("dat"))     // → date
-        XCTAssertTrue(MacroEngine.couldMatch("random 5"))
-    }
-
-    func testExpressionsStayAlive() {
-        XCTAssertTrue(MacroEngine.couldMatch("2+2"))
-        XCTAssertTrue(MacroEngine.couldMatch("10km->"))
-        XCTAssertTrue(MacroEngine.couldMatch("72"))
-    }
-
-    func testDeadQueriesGiveUp() {
-        XCTAssertFalse(MacroEngine.couldMatch("xyz"))
-        XCTAssertFalse(MacroEngine.couldMatch("hello there"))
-    }
-
     // MARK: - Engine.trimSuffixOverlap
 
     func testDuplicatedPunctuationTrimmed() {

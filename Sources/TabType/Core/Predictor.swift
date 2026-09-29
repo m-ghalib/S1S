@@ -91,7 +91,7 @@ final class Predictor {
     /// continuation, no chat template, no system prompt). Determines both the
     /// prompt body format and the tokenization path in `generate`.
     private var isBaseModel: Bool {
-        ModelCatalog.all.first(where: { $0.id == provider.readyModelId })?.isBase ?? true
+        provider.readyModelId.flatMap(ModelCatalog.known)?.isBase ?? true
     }
 
     /// Invalidate any in-flight prediction's result (does not tear down GPU work).
@@ -256,7 +256,9 @@ final class Predictor {
                         ["role": "system", "content": systemPrompt],
                         ["role": "user", "content": context],
                     ]
-                    ids = try ctx.tokenizer.applyChatTemplate(messages: messages)
+                    // Qwen3.5 4B/9B templates think by default; other templates ignore the flag.
+                    ids = try ctx.tokenizer.applyChatTemplate(
+                        messages: messages, tools: nil, additionalContext: ["enable_thinking": false])
                 } catch {
                     Log.shared.debug("applyChatTemplate failed (\(error)), falling back to raw continuation")
                     ids = ctx.tokenizer.encode(text: context)

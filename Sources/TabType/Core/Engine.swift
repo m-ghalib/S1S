@@ -91,6 +91,8 @@ final class Engine {
     }
     /// One-shot log flag for the chat-panels-only skip.
     private var loggedChatPanelSkip: Set<String> = []
+    /// One-shot log flag for keys typed outside a text input, per app.
+    private var loggedNonTextSkip: Set<String> = []
 
     /// Code editors (`chatPanelsOnly`): allow only short text inputs — sidebar
     /// chat composers — never the tall main-editor surface.
@@ -310,8 +312,8 @@ final class Engine {
     /// Input-tail prefill instead of the whole prompt. The 1-token result is
     /// discarded; runs only when idle and skipped in Low Power Mode.
     private func schedulePrewarm(policy: AppPolicy) {
-        guard settings.isEnabled, !PowerMonitor.shared.isLowPower else { return }
         prewarmTask?.cancel()
+        guard settings.isEnabled, policy.isEnabled, !PowerMonitor.shared.isLowPower else { return }
         prewarmTask = Task { [weak self] in
             // Let the focus-change screen capture land first (throttle is 1.5s, a
             // capture kicked just above typically completes well inside 0.8s).
@@ -319,6 +321,9 @@ final class Engine {
             guard let self, !Task.isCancelled else { return }
             // Only when idle — never compete with a real prediction.
             guard self.currentSuggestion == nil, self.buffer.isEmpty else { return }
+            // No GPU work while focus is on a game view or other non-text control.
+            guard AccessibilityBridge.focusedElement().map(AccessibilityBridge.isTextInput) ?? false
+            else { return }
             let bid = AccessibilityBridge.frontmostBundleId()
             let screenCap = policy.screenContextCap ?? AppPolicyStore.defaultContextCap
             let screenEnabled = (self.settings.useScreenContext || policy.forceScreenContext)
@@ -623,6 +628,24 @@ final class Engine {
             }
         }
 
+        // Keys pressed outside an editable text field (game controls, Finder
+        // type-to-select, web-page shortcuts) are not writing: never buffer,
+        // autocorrect, expand commands, or predict on them.
+        let focused = AccessibilityBridge.focusedElement()
+        guard focused.map(AccessibilityBridge.isTextInput) ?? false else {
+            buffer = ""
+            // Unconditional: also invalidates pending completions (scheduleToken)
+            // that would otherwise land over this non-text control.
+            clearSuggestion()
+            if inlineCommand.isActive { inlineCommand.cancel() }
+            let bundleId = AccessibilityBridge.frontmostBundleId() ?? "?"
+            if loggedNonTextSkip.insert(bundleId).inserted {
+                let role = focused.flatMap(AccessibilityBridge.role(of:)) ?? "none"
+                Log.shared.info("keys ignored in \(bundleId): focused element is not a text input (role=\(role))")
+            }
+            return
+        }
+
         // Maintain fallback buffer.
         if isDeletion {
             if !buffer.isEmpty { buffer.removeLast() }
@@ -630,7 +653,7 @@ final class Engine {
             buffer += chars
         }
 
-        // Inline commands (:emoji / macro) take priority over LLM suggestions.
+        // Inline commands (:emoji) take priority over LLM suggestions.
         let commandActive = inlineCommand.handleEdit(
             chars: chars, isDeletion: isDeletion,
             caretRect: {
@@ -1198,11 +1221,11 @@ final class Engine {
             if currentLine.trimmingCharacters(in: .whitespaces).count < 3 { screenContext = "" }
         }
 
-        // Require an actual focused element — like Cotypist, never suggest when
-        // nothing is focused/selected (even if the keystroke buffer has text, e.g.
-        // from typing over a non-text control or between fields).
-        guard ctx.focused != nil else {
-            Log.shared.debug("predict skipped: no focused element")
+        // Require a focused editable text input — like Cotypist, never suggest
+        // when nothing is focused or focus is on a non-text control (even if the
+        // keystroke buffer has text, e.g. from game keys or between fields).
+        guard ctx.focused.map(AccessibilityBridge.isTextInput) ?? false else {
+            Log.shared.debug("predict skipped: no focused text input")
             return
         }
 
@@ -1726,7 +1749,7 @@ final class Engine {
     /// Accept the current inline command or LLM suggestion. Returns true if something
     /// was accepted (so the key is swallowed). `whole` = accept the entire suggestion.
     private func acceptCurrent(whole: Bool) -> Bool {
-        // Inline command (emoji/macro) takes priority over LLM suggestions.
+        // Inline command (emoji) takes priority over LLM suggestions.
         if inlineCommand.isActive {
             if let (deleteCount, insert) = inlineCommand.accept() {
                 buffer = String(buffer.dropLast(deleteCount)) + insert

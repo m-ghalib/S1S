@@ -20,7 +20,7 @@ An honest, detailed comparison. TabType's goal is Cotypist-grade quality as a fr
 | Speculative "parked" generation + KV cache | ✅ | ✅ |
 | Text mirroring (pixel-perfect ghost) | ✅ | ✅ |
 | Per-app & per-domain policies | ✅ | ✅ |
-| Emoji / macros / autocorrect | ✅ (+ Indian languages) | partial |
+| Emoji / autocorrect | ✅ (+ Indian languages) | partial |
 | Notarized, App Store-smooth install | ❌ (alpha, unnotarized) | ✅ |
 | Breadth of tested apps & polish | ⚠️ growing | ✅ mature |
 | In-app auto-update | ❌ (manual for now) | ✅ |

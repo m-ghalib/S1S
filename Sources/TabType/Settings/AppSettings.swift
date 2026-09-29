@@ -52,7 +52,6 @@ final class AppSettings: ObservableObject {
 
     // MARK: Text tools
     @Published var emojiEnabled: Bool { didSet { defaults.set(emojiEnabled, forKey: Keys.emojiEnabled) } }
-    @Published var macrosEnabled: Bool { didSet { defaults.set(macrosEnabled, forKey: Keys.macrosEnabled) } }
     @Published var autocorrectEnabled: Bool { didSet { defaults.set(autocorrectEnabled, forKey: Keys.autocorrectEnabled) } }
     @Published var skipOnTypo: Bool { didSet { defaults.set(skipOnTypo, forKey: Keys.skipOnTypo) } }
     @Published var emoticonsEnabled: Bool { didSet { defaults.set(emoticonsEnabled, forKey: Keys.emoticonsEnabled) } }
@@ -289,7 +288,6 @@ final class AppSettings: ObservableObject {
         }
         verboseLog = defaults.object(forKey: Keys.verboseLog) as? Bool ?? false
         emojiEnabled = defaults.object(forKey: Keys.emojiEnabled) as? Bool ?? true
-        macrosEnabled = defaults.object(forKey: Keys.macrosEnabled) as? Bool ?? true
         autocorrectEnabled = defaults.object(forKey: Keys.autocorrectEnabled) as? Bool ?? true
         skipOnTypo = defaults.object(forKey: Keys.skipOnTypo) as? Bool ?? true
         emoticonsEnabled = defaults.object(forKey: Keys.emoticonsEnabled) as? Bool ?? true
@@ -364,7 +362,6 @@ final class AppSettings: ObservableObject {
         static let appOverrides = "appOverrides"
         static let verboseLog = "verboseLog"
         static let emojiEnabled = "emojiEnabled"
-        static let macrosEnabled = "macrosEnabled"
         static let autocorrectEnabled = "autocorrectEnabled"
         static let skipOnTypo = "skipOnTypo"
         static let autocorrectLanguage = "autocorrectLanguage"

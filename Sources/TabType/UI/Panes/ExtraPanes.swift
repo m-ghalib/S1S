@@ -36,7 +36,7 @@ struct ContextPane: View {
     }
 }
 
-/// Toggles for the inline text tools (autocorrect + macros). Emoji has its own
+/// Toggles for the inline text tools (autocorrect). Emoji has its own
 /// dedicated sidebar section (`EmojiPane`).
 struct TextToolsPane: View {
     @EnvironmentObject var settings: AppSettings
@@ -75,29 +75,6 @@ struct TextToolsPane: View {
                 }
         } footer: {
             Footnote("Pauses completions while the word at the cursor looks like a typo.")
-        }
-        Section {
-            Toggle("Inline macros", isOn: $settings.macrosEnabled)
-            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 4) {
-                macroRow("/date, /time, /now", "current date / time")
-                macroRow("/uuid, /dice, /coin", "random value")
-                macroRow("/random 100", "random 0-100")
-                macroRow("10km->mi", "unit conversion")
-                macroRow("2+2*3", "arithmetic")
-            }
-            .font(.caption)
-            .padding(.top, 2)
-        } header: {
-            Text("Macros")
-        } footer: {
-            Footnote("Type `/` and a command, then press Tab.")
-        }
-    }
-
-    private func macroRow(_ cmd: String, _ desc: String) -> some View {
-        GridRow {
-            Text(cmd).monospaced().foregroundStyle(.primary)
-            Text(desc).foregroundStyle(.secondary)
         }
     }
 }

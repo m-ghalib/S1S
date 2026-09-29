@@ -1,7 +1,8 @@
 // Draws the "Ghost tail" app icon: two text lines on an ivory tile, an orange
 // caret, and a faded suggestion after it.
+// Also draws the same glyph, without the tile, as the menu bar template image.
 // Run from the repo root: swift Scripts/generate-app-icon.swift
-// Writes Resources/AppIcon.icns and the 1024 px asset-catalog PNG.
+// Writes Resources/AppIcon.icns, the 1024 px asset-catalog PNG, and MenuBarIcon.imageset.
 import AppKit
 
 func srgb(_ hex: UInt32) -> CGColor {
@@ -86,6 +87,31 @@ func render(pixels px: Int) -> Data {
     return rep.representation(using: .png, properties: [:])!
 }
 
+/// Menu bar glyph on an 18 pt canvas, in points. Black plus alpha only: AppKit
+/// tints template images for light, dark, and highlighted menu bars, and keeps
+/// the alpha, so the suggestion still reads as faded.
+let menuBarBars: [Bar] = [(2, 3.5, 14, 2.5, ink, 1), (2, 10.5, 5, 2.5, ink, 1),
+                          (8.25, 8, 1.5, 7.5, ink, 1), (11, 10.5, 5, 2.5, ink, 0.35)]
+
+func renderMenuBar(scale: Int) -> Data {
+    let px = 18 * scale
+    let ctx = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0,
+                        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    ctx.translateBy(x: 0, y: CGFloat(px))
+    ctx.scaleBy(x: CGFloat(scale), y: -CGFloat(scale))
+    for bar in menuBarBars {
+        let rect = CGRect(x: bar.x, y: bar.y, width: bar.w, height: bar.h)
+        let radius = min(rect.width, rect.height) / 2
+        ctx.addPath(CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil))
+        ctx.setFillColor(CGColor(gray: 0, alpha: bar.alpha))
+        ctx.fillPath()
+    }
+    let rep = NSBitmapImageRep(cgImage: ctx.makeImage()!)
+    rep.size = NSSize(width: 18, height: 18)
+    return rep.representation(using: .png, properties: [:])!
+}
+
 let fm = FileManager.default
 let iconset = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("AppIcon.iconset")
 try? fm.removeItem(at: iconset)
@@ -103,4 +129,7 @@ iconutil.arguments = ["-c", "icns", iconset.path, "-o", "Resources/AppIcon.icns"
 try! iconutil.run()
 iconutil.waitUntilExit()
 precondition(iconutil.terminationStatus == 0, "iconutil failed")
-print("Wrote Resources/AppIcon.icns and AppIcon.appiconset/AppIcon.png")
+let menuBarSet = "Sources/TabType/Resources/Assets.xcassets/MenuBarIcon.imageset/"
+try! renderMenuBar(scale: 1).write(to: URL(fileURLWithPath: menuBarSet + "MenuBarIcon.png"))
+try! renderMenuBar(scale: 2).write(to: URL(fileURLWithPath: menuBarSet + "MenuBarIcon@2x.png"))
+print("Wrote Resources/AppIcon.icns, AppIcon.appiconset/AppIcon.png, and MenuBarIcon.imageset")

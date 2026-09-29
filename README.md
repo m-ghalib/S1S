@@ -43,7 +43,7 @@ No corporate backing, no paid tier, no ads — just trying to make something gre
 
 ## What it is
 
-As you type, TabType shows a dimmed **ghost-text** prediction of what comes next. Press **Tab** to accept a word, again for the next, or accept the whole thing at once. A local language model ([Qwen3-4B](https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-4bit) via Apple's [MLX](https://github.com/ml-explore/mlx); on 24 GB+ Macs the higher-precision [8-bit build](https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-8bit) is recommended automatically) generates the suggestions, personalized to how *you* write — and it all happens on-device.
+As you type, TabType shows a dimmed **ghost-text** prediction of what comes next. Press **Tab** to accept a word, again for the next, or accept the whole thing at once. A local language model ([Qwen3.5](https://huggingface.co/mlx-community/Qwen3.5-2B-4bit) via Apple's [MLX](https://github.com/ml-explore/mlx); TabType picks a speed and accuracy level that suits your Mac's chip and memory, and Settings offers three simple choices: Fastest, Balanced, and Most accurate) generates the suggestions, personalized to how *you* write — and it all happens on-device.
 
 ## ✨ Features
 
@@ -73,7 +73,7 @@ As you type, TabType shows a dimmed **ghost-text** prediction of what comes next
 - Per-app and per-website policies (tone, language, enable/disable, mid-line behavior)
 - Code editors get suggestions only in chat panels, never the main editor
 - Low Power Mode tuning, force-activate & per-app pause shortcuts
-- Inline `/macros` (`/date`, `/uuid`, `10km->mi`, `2+2*3`), `:emoji`, and local autocorrect (incl. 6 Indian languages)
+- Inline `:emoji` and local autocorrect (incl. 6 Indian languages)
 
 ## 🆚 How TabType compares
 
@@ -120,7 +120,7 @@ There are a few other open-source macOS autocomplete projects — each great in 
 4. Open **System Settings ▸ Privacy & Security**, scroll down, and click **"Open Anyway"** next to TabType. Confirm.
    - *Power users, instead of steps 3–4:* `xattr -dr com.apple.quarantine /Applications/TabType.app`
 5. Grant **Accessibility** when prompted (required — it's how TabType reads the text field and inserts completions). **Screen Recording** is optional (improves context in non-chat apps).
-6. **First launch downloads the model** (~0.3–4.3 GB from Hugging Face, depending on your Mac's RAM tier). The menu-bar icon shows progress; suggestions start once it's ready.
+6. **First launch downloads the model** (~1.8–6 GB from Hugging Face, depending on the model you choose). The menu-bar icon shows progress; suggestions start once it's ready.
 
 **Requirements:** Apple Silicon Mac (M1 or later), macOS 14+.
 
@@ -171,7 +171,7 @@ TabType is built by a **senior full-stack engineer with 5+ years of experience**
 
 **Documentation** — This README and the other docs (`CONTRIBUTING.md`, `RELEASING.md`, `docs/COMPARISON.md`, issue templates) were **written with AI assistance** and reviewed by the author.
 
-**The completion model** — Suggestions come from a **third-party, open-weights language model** (by default [Qwen3-4B-Instruct](https://huggingface.co/mlx-community/Qwen3-4B-Instruct-2507-4bit) from Alibaba's Qwen team; Google's Gemma and others are also selectable). TabType did **not** train or fine-tune any model — it runs these pre-trained weights locally via [MLX](https://github.com/ml-explore/mlx). Their training data and behavior are the model authors', governed by their respective licenses (e.g. the Qwen and Gemma terms).
+**The completion model** — Suggestions come from a **third-party, open-weights language model** (by default [Qwen3.5 2B](https://huggingface.co/mlx-community/Qwen3.5-2B-4bit) from Alibaba's Qwen team; larger Qwen3.5 models and Google's Gemma 4 are also selectable). TabType did **not** train or fine-tune any model — it runs these pre-trained weights locally via [MLX](https://github.com/ml-explore/mlx). Their training data and behavior are the model authors', governed by their respective licenses (e.g. the Qwen and Gemma terms).
 
 **Runtime output provenance** — Every suggestion you see is **generated on-device by that language model** from your local context (the text you're typing, your recent messages/writing, and — with permission — nearby on-screen text). Outputs are probabilistic and **not curated, fact-checked, or reviewed** by a human or by us; treat them like any LLM output — they can be wrong, biased, or inappropriate. Nothing is sent to a server; generation is 100% local. TabType does not collect, transmit, or train on your text.
 

@@ -18,30 +18,15 @@ enum HardwareInfo {
         return String(decoding: buffer.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)), as: UTF8.self)
     }
 
-    /// The recommended model id for this machine's RAM. Unified memory on Apple
-    /// Silicon is shared with the GPU, so we leave generous headroom for the OS
-    /// and other apps while still using a capable model.
+    /// The recommended model id for this Mac: the most accurate of the three
+    /// simple choices that fits in memory and suggests quickly on this chip.
+    /// See `ModelAdvisor.recommended(chip:ramGB:)`.
     static var recommendedModelId: String {
-        // Tiers balance quality against autocomplete latency. Qwen3-4B-Instruct-2507
-        // is the default across capable Macs — a newer generation than Qwen2.5 with
-        // markedly better short-form continuation, non-thinking (never emits
-        // reasoning), ~2.3 GB, and fast enough for inline use. Smaller Macs fall
-        // back to lighter instruct models. Instruct variants get a real chat-template
-        // prompt (see Predictor.swift), matching Cotypist's approach.
-        let ram = ramGB
-        switch ram {
-        // 24 GB+ gets the 8-bit quant of the same model: higher-precision weights
-        // measurably reduce wrong-token completions, and on M-Pro-class chips the
-        // 4B model decodes at near-parity between 4-bit and 8-bit.
-        case 24...: return "mlx-community/Qwen3-4B-Instruct-2507-8bit"
-        case 16...: return "mlx-community/Qwen3-4B-Instruct-2507-4bit"
-        case 8...:  return "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
-        default:    return "mlx-community/Qwen2.5-0.5B-Instruct-4bit"
-        }
+        ModelAdvisor.recommended(chip: chip, ramGB: ramGB).modelId
     }
 
     /// Human-readable rationale for the recommendation.
     static var recommendationReason: String {
-        "\(chip) · \(ramGB) GB RAM"
+        "\(chip) · \(ramGB) GB memory"
     }
 }

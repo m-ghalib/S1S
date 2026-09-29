@@ -1,8 +1,7 @@
 import AppKit
 
-/// A small floating panel that previews inline-command results: emoji candidates
-/// or a macro's evaluated value. Non-activating, click-through, like the suggestion
-/// overlay.
+/// A small floating panel that previews inline-command results (emoji
+/// candidates). Non-activating, click-through, like the suggestion overlay.
 @MainActor
 final class CommandPreviewPanel {
     private var panel: NSPanel?

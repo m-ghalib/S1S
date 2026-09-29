@@ -212,6 +212,7 @@ struct ModelSettingsView: View {
     @EnvironmentObject var provider: ModelProvider
     @State private var customId = ""
     @State private var storageTick = 0   // bump to refresh installed sizes
+    @State private var showAllModels = false
 
     var body: some View {
         Section {
@@ -227,70 +228,161 @@ struct ModelSettingsView: View {
             Footnote("The local model runs entirely on this Mac and needs no network. Apple Intelligence is an alternative.")
         }
 
-        Section("Local model") {
-            HStack {
-                statusIcon
-                Text(statusText).foregroundStyle(.secondary).lineLimit(1)
-                Spacer()
-                if case .downloading(_, let p) = provider.state {
-                    ProgressView(value: p).frame(width: 120)
-                    Text("\(Int(p * 100))%").font(.caption).foregroundStyle(.secondary)
-                        .frame(width: 32, alignment: .trailing)
-                }
-                if case .finalizing = provider.state {
-                    ProgressView().controlSize(.small)
-                }
-                if case .failed(let modelId, _) = provider.state {
-                    Button("Retry") { provider.retry(modelId: modelId) }
-                }
-                if case .idle = provider.state {
-                    Button("Download") { provider.load(modelId: settings.modelId) }
-                }
+        Section {
+            statusRow
+            ForEach(ModelAdvisor.Choice.allCases) { choice in choiceRow(choice) }
+            if ModelAdvisor.Choice.matching(modelId: settings.modelId) == nil {
+                Text(otherModelNote).font(.caption).foregroundStyle(.secondary)
             }
-            if case .failed(_, let message) = provider.state {
-                Text(message).font(.caption).foregroundStyle(.red)
-            }
+        } header: {
+            Text("Model")
+        } footer: {
+            Footnote("Estimates for this Mac (\(HardwareInfo.recommendationReason)). Speed also depends on what else is running.")
         }
 
         Section {
-            ForEach(ModelCatalog.recommended) { model in modelRow(model) }
-        } header: {
-            Text("Recommended")
+            DisclosureGroup("All models", isExpanded: $showAllModels) {
+                ForEach(ModelCatalog.all) { model in modelRow(model) }
+                HStack {
+                    TextField("Hugging Face model ID", text: $customId, prompt: Text("mlx-community/…"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                    Button("Load") { select(customId) }
+                        .disabled(customId.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                .help("Any MLX-format text model from Hugging Face.")
+                LabeledContent("Model files") {
+                    Button("Reveal in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting(
+                            [ModelStorage.revealDir(for: settings.modelId)])
+                    }
+                }
+            }
         } footer: {
-            Footnote("Recommended for this Mac: \(HardwareInfo.recommendationReason).")
-        }
-
-        Section {
-            ForEach(ModelCatalog.other) { model in modelRow(model) }
-        } header: {
-            Text("Other Models")
-        } footer: {
-            Footnote("Instruct models continue text well but may occasionally reply instead. Models on disk: \(ModelStorage.formatted(ModelStorage.totalUsed())).")
+            Footnote("For experts. Instruct models continue text well but may occasionally reply instead. Models on disk: \(ModelStorage.formatted(ModelStorage.totalUsed())).")
                 .id(storageTick)
         }
+    }
 
-        Section {
-            HStack {
-                TextField("Model ID", text: $customId, prompt: Text("mlx-community/…"))
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-                Button("Load") { select(customId) }
-                    .disabled(customId.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-        } header: {
-            Text("Custom Hugging Face model")
-        } footer: {
-            Footnote("Any MLX-format text model from Hugging Face.")
-        }
-
-        Section("Storage") {
-            LabeledContent("Model files") {
-                Button("Reveal in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting(
-                        [ModelStorage.revealDir(for: settings.modelId)])
+    /// Download or load progress for the active model. Hidden once it is ready,
+    /// because the selected choice row already says so.
+    @ViewBuilder private var statusRow: some View {
+        if case .ready = provider.state {
+            EmptyView()
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    statusIcon
+                    Text(statusText).foregroundStyle(.secondary).lineLimit(1)
+                    Spacer()
+                    if case .downloading(_, let p) = provider.state {
+                        ProgressView(value: p).frame(width: 120)
+                        Text("\(Int(p * 100))%").font(.caption).foregroundStyle(.secondary)
+                            .frame(width: 32, alignment: .trailing)
+                    }
+                    if case .finalizing = provider.state {
+                        ProgressView().controlSize(.small)
+                    }
+                    if case .failed(let modelId, _) = provider.state {
+                        Button("Retry") { provider.retry(modelId: modelId) }
+                    }
+                    if case .idle = provider.state {
+                        Button("Download") { provider.load(modelId: settings.modelId) }
+                    }
+                }
+                if case .failed(_, let message) = provider.state {
+                    Text(message).font(.caption).foregroundStyle(.red)
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func choiceRow(_ choice: ModelAdvisor.Choice) -> some View {
+        let selected = settings.modelId == choice.modelId
+        let fit = ModelAdvisor.fit(choice, ramGB: HardwareInfo.ramGB)
+        let latency = ModelAdvisor.estimatedLatencyMs(
+            choice, bandwidthGBs: ModelAdvisor.memoryBandwidthGBs(chip: HardwareInfo.chip))
+        Button { select(choice.modelId) } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(selected ? Color.accentColor : .secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(choice.title).fontWeight(.medium)
+                        if choice == recommendedChoice { badge("Recommended for this Mac") }
+                        if installed(choice.modelId) {
+                            Text("Downloaded").font(.caption2).foregroundStyle(.green)
+                        } else {
+                            Text(String(format: "%.1f GB download", choice.weightsGB))
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    Text(choice.summary).font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 20) {
+                        meter("Speed", score: ModelAdvisor.speedScore(ms: latency),
+                              detail: ModelAdvisor.latencyText(ms: latency) + " per suggestion")
+                        meter("Accuracy", score: choice.accuracy,
+                              detail: ModelAdvisor.accuracyText(choice.accuracy))
+                    }
+                    .help("Rough estimates. Speed is calculated for this Mac's chip; accuracy compares these three choices with each other.")
+                    switch fit {
+                    case .comfortable: EmptyView()
+                    case .tight:
+                        Label("May slow other apps on this Mac.", systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.orange)
+                    case .tooLarge:
+                        Label("Needs more memory than this Mac has.", systemImage: "xmark.octagon")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(fit == .tooLarge)
+        .opacity(fit == .tooLarge ? 0.5 : 1)
+    }
+
+    /// Five dots filled up to `score`, then a plain-language value.
+    private func meter(_ label: String, score: Int, detail: String) -> some View {
+        HStack(spacing: 6) {
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 2) {
+                ForEach(1...5, id: \.self) { i in
+                    Circle()
+                        .fill(i <= score ? Color.accentColor : Color.secondary.opacity(0.25))
+                        .frame(width: 6, height: 6)
+                }
+            }
+            Text(detail).font(.caption)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(detail)")
+    }
+
+    private func badge(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2).fontWeight(.semibold)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Capsule().fill(Color.accentColor.opacity(0.18)))
+            .foregroundStyle(Color.accentColor)
+    }
+
+    private var recommendedChoice: ModelAdvisor.Choice {
+        ModelAdvisor.recommended(chip: HardwareInfo.chip, ramGB: HardwareInfo.ramGB)
+    }
+
+    private func displayName(_ id: String) -> String { ModelAdvisor.displayName(for: id) }
+
+    /// Explains a selected model that is not one of the three simple choices.
+    private var otherModelNote: String {
+        let name = displayName(settings.modelId)
+        if ModelCatalog.all.contains(where: { $0.id == settings.modelId }) {
+            return "Using \(name), chosen under All models."
+        }
+        return "Using \(name), which is no longer listed. It keeps working until you pick another model."
     }
 
     @ViewBuilder private var statusIcon: some View {
@@ -305,11 +397,11 @@ struct ModelSettingsView: View {
 
     private var statusText: String {
         switch provider.state {
-        case .idle: return "Idle"
-        case .downloading(let modelId, _): return "Downloading \(modelId.split(separator: "/").last.map(String.init) ?? modelId)…"
-        case .finalizing(let modelId): return "Loading \(modelId.split(separator: "/").last.map(String.init) ?? modelId) into memory…"
-        case .ready(let id): return id
-        case .failed(let modelId, _): return "Failed: \(modelId.split(separator: "/").last.map(String.init) ?? modelId)"
+        case .idle: return "Not downloaded yet"
+        case .downloading(let modelId, _): return "Downloading \(displayName(modelId))…"
+        case .finalizing(let modelId): return "Loading \(displayName(modelId))…"
+        case .ready(let id): return "Ready: \(displayName(id))"
+        case .failed(let modelId, _): return "Couldn't load \(displayName(modelId))"
         }
     }
 
@@ -328,13 +420,7 @@ struct ModelSettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(model.name).fontWeight(.medium)
-                        if ModelCatalog.isRecommended(model.id) {
-                            Text("Best for you")
-                                .font(.caption2).fontWeight(.semibold)
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Capsule().fill(Color.accentColor.opacity(0.18)))
-                                .foregroundStyle(Color.accentColor)
-                        }
+                        if ModelCatalog.isRecommended(model.id) { badge("Recommended") }
                         if installed(model.id) {
                             Text("Installed · \(ModelStorage.formatted(ModelStorage.size(model.id)))")
                                 .font(.caption2)

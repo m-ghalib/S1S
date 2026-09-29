@@ -130,7 +130,7 @@ final class ModelProvider: ObservableObject {
                     self.readyModelId = modelId
                     self.state = .ready(modelId: modelId)
                     Log.shared.info("model ready: \(modelId)")
-                    let isBase = ModelCatalog.all.first(where: { $0.id == modelId })?.isBase ?? true
+                    let isBase = ModelCatalog.known(modelId)?.isBase ?? true
                     if isBase {
                         Log.shared.info("model instructions: none (base model, raw continuation — no chat template/system prompt)")
                     } else {

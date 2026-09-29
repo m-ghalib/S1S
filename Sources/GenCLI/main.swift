@@ -233,6 +233,49 @@ if let i = args.firstIndex(of: "--memtest") {
     exit(0)
 }
 
+// --- Instruct-model check through the chat template (mirrors Predictor) ---
+// Usage: [SYSTEM_FILE=prompt.txt] tabtype-gencli --model <id> --chat [prompts…]
+// Prints each suggestion with prefill and decode speed, and flags models that emit
+// <think> reasoning instead of a continuation.
+if let i = args.firstIndex(of: "--chat") {
+    args.remove(at: i)
+    let system = ProcessInfo.processInfo.environment["SYSTEM_FILE"]
+        .flatMap { try? String(contentsOfFile: $0, encoding: .utf8) }
+        ?? "You are an inline autocomplete engine. You ARE the author of the text after \"Input:\". Output only the next few words the author would type."
+    let inputs = args.isEmpty ? Array(prompts.prefix(4)) : args
+    for (n, text) in ([inputs[0]] + inputs).enumerated() {   // first run warms up
+        let (output, info): (String, GenerateCompletionInfo?) = try await container.perform { ctx in
+            let ids = try ctx.tokenizer.applyChatTemplate(messages: [
+                ["role": "system", "content": system],
+                ["role": "user", "content": "Input: \(text)\nOutput:"],
+            ], tools: nil, additionalContext: ["enable_thinking": false])
+            var params = GenerateParameters()
+            params.maxTokens = 16
+            params.temperature = 0
+            params.repetitionPenalty = 1.05
+            let input = LMInput(tokens: MLXArray(ids.map { Int32($0) }))
+            var out = ""
+            var info: GenerateCompletionInfo?
+            // Never break early — abandoning the stream mid-flight segfaults MLX.
+            for await item in try MLXLMCommon.generate(input: input, parameters: params, context: ctx) {
+                switch item {
+                case .chunk(let s): out += s
+                case .info(let i): info = i
+                default: break
+                }
+            }
+            return (out, info)
+        }
+        guard n > 0, let info else { continue }
+        let flag = output.contains("<think>") || output.contains("Thinking Process") ? "  THINKING" : ""
+        print("\(text) → \(output.replacingOccurrences(of: "\n", with: "⏎"))\(flag)")
+        print(String(format: "  prefill %d tok @ %.0f tok/s, decode %d tok @ %.1f tok/s",
+                     info.promptTokenCount, info.promptTokensPerSecond,
+                     info.generationTokenCount, info.tokensPerSecond))
+    }
+    exit(0)
+}
+
 // Warm up.
 _ = try await complete("Hello", maxTok: 4)
 
