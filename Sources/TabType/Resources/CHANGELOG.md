@@ -7,6 +7,15 @@ Settings > About > What's New, and opens that page once after an update.
 Bullets support inline Markdown (**bold**, `code`, links). Do not use em dashes.
 -->
 
+## 0.1.5
+
+- Switches to the newer Qwen3.5 models, and picks one that suits your Mac's chip and memory.
+- Adds three simple model choices in Settings: Fastest, Balanced, and Most accurate, with estimated speed and memory fit for your Mac.
+- Adds Gemma 4 12B for Macs with 32 GB or more of memory.
+- Stops suggestions and autocorrect when you type outside a text field, such as in games, Finder, or web-page shortcuts.
+- Removes inline `/` macros (date, units, arithmetic). `:emoji` and autocorrect remain.
+- Updates the menu-bar icon.
+
 ## 0.1.4
 
 - Asks for a short writing profile on first run, and uses it to personalize suggestions.
