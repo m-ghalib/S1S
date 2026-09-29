@@ -81,7 +81,7 @@ Put the logic in static helpers so these tests can run under `swift test`.
 
 These checks have not been done:
 
-1. Build with `./Scripts/build.sh app` and launch with a fresh `onboardingProfile` (`defaults delete app.tabtype.TabType onboardingProfile`).
+1. Build with `./Scripts/build.sh app` and launch with a fresh `onboardingProfile` (`defaults delete app.s1s.S1S onboardingProfile`).
 2. Complete the flow through computer use and time it. The median completion time must be 3 minutes or less.
 3. With verbose logging on, confirm that the first prompt after onboarding contains the persona preface and the onboarding few-shot pairs.
 4. Redo onboarding from Settings and confirm the prompt changes.

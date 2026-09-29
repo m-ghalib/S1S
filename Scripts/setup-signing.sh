@@ -26,11 +26,11 @@ openssl req -x509 -newkey rsa:2048 -days 3650 \
 
 openssl pkcs12 -export -legacy \
     -in "$TMP/dev.crt" -inkey "$TMP/dev.key" \
-    -out "$TMP/dev.p12" -password pass:tabtype >/dev/null 2>&1
+    -out "$TMP/dev.p12" -password pass:s1s >/dev/null 2>&1
 
 security import "$TMP/dev.p12" \
     -k "$HOME/Library/Keychains/login.keychain-db" \
-    -P tabtype -T /usr/bin/codesign
+    -P s1s -T /usr/bin/codesign
 
 echo ""
 echo "✓ Certificate imported into your login keychain."

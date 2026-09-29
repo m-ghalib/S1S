@@ -1,4 +1,4 @@
-// Dump the accessibility facts TabType depends on for one app's focused text field.
+// Dump the accessibility facts S1S depends on for one app's focused text field.
 // Usage: swift ax-probe.swift <bundle-id> [--no-activate]
 // Put the caret in the target field first. Run it ~3 times to confirm values are stable.
 import AppKit
@@ -19,7 +19,7 @@ if !args.contains("--no-activate") {
     Thread.sleep(forTimeInterval: 1.2)
 }
 let axApp = AXUIElementCreateApplication(app.processIdentifier)
-// Chromium/Electron expose their web AX tree only after a client asks (as TabType does).
+// Chromium/Electron expose their web AX tree only after a client asks (as S1S does).
 AXUIElementSetAttributeValue(axApp, "AXManualAccessibility" as CFString, kCFBooleanTrue)
 AXUIElementSetAttributeValue(axApp, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
 Thread.sleep(forTimeInterval: 0.3)
@@ -70,7 +70,7 @@ for name in ["AXRole", "AXSubrole", "AXRoleDescription", "AXPlaceholderValue", "
              "AXNumberOfCharacters", "AXSelectedTextRange", "AXPosition", "AXSize", "AXURL"] {
     print("  \(name): \(describe(attr(el, name)))")
 }
-if (attr(el, "AXSubrole") as? String) == "AXSecureTextField" { print("  SECURE FIELD: TabType never reads or suggests here") }
+if (attr(el, "AXSubrole") as? String) == "AXSecureTextField" { print("  SECURE FIELD: S1S never reads or suggests here") }
 
 var sel = CFRange()
 if let s = attr(el, kAXSelectedTextRangeAttribute), CFGetTypeID(s) == AXValueGetTypeID() {
@@ -81,7 +81,7 @@ if let s = attr(el, kAXSelectedTextRangeAttribute), CFGetTypeID(s) == AXValueGet
         print("  WARNING: caret reported at 0 in a non-empty field (Ghostty-style blocker; policy cannot fix)")
     }
 } else {
-    print("  WARNING: no AXSelectedTextRange; TabType cannot place a caret here")
+    print("  WARNING: no AXSelectedTextRange; S1S cannot place a caret here")
 }
 
 // Walk up for web content: AXWebArea + AXURL drive website (domain) policies.

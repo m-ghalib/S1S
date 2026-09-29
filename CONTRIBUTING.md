@@ -1,12 +1,12 @@
-# Contributing to TabType
+# Contributing to S1S
 
-Thanks for helping! TabType is an **alpha** open-source project and contributions of every size are welcome — bug reports especially.
+Thanks for helping! S1S is an **alpha** open-source project and contributions of every size are welcome — bug reports especially.
 
 ## Ways to help right now
 
 - **Report app-specific bugs.** "Ghost text is misplaced in _X_" or "no suggestions in _Y_" reports are gold. Include the app, macOS version, and (if you can) a screenshot. Screenshots don't dismiss the ghost.
 - **Per-app extraction recipes.** Some apps expose text cleanly, others don't. If an app misbehaves, `AppPolicy.swift` is where per-app behavior lives — small, self-contained additions.
-- **More autocorrect languages** (`Sources/TabType/Core/Spelling/`, dictionaries in `Resources/`).
+- **More autocorrect languages** (`Sources/S1S/Core/Spelling/`, dictionaries in `Resources/`).
 - **UI/UX polish** across the settings panes.
 - **Notarization** — if you have an Apple Developer ID and want to help ship notarized builds, please reach out on an issue.
 
@@ -16,7 +16,7 @@ Thanks for helping! TabType is an **alpha** open-source project and contribution
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 xcodebuild -downloadComponent MetalToolchain          # one-time
 ./Scripts/setup-signing.sh                            # one-time, stable local identity
-./Scripts/build.sh app && open dist/TabType.app
+./Scripts/build.sh app && open dist/S1S.app
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
 ```
 
@@ -40,7 +40,7 @@ The [README architecture section](README.md#-architecture) shows how they connec
 ## Conventions
 
 - Match the surrounding style; keep comments about *why*, not *what*.
-- Pure logic (trimming, filtering, budgeting, candidate assembly) belongs in testable static helpers — see `Tests/TabTypeTests/`. Add a test when you add such logic.
+- Pure logic (trimming, filtering, budgeting, candidate assembly) belongs in testable static helpers — see `Tests/S1STests/`. Add a test when you add such logic.
 - Keep everything on-device. No network calls except model download.
 
 ## PRs

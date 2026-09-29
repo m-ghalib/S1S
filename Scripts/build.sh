@@ -1,7 +1,7 @@
 #!/bin/bash
-# TabType build helper.
+# S1S build helper.
 #   ./Scripts/build.sh gencli   — build the inference validation CLI
-#   ./Scripts/build.sh app      — build TabType and bundle TabType.app into dist/
+#   ./Scripts/build.sh app      — build S1S and bundle S1S.app into dist/
 #
 # Requires full Xcode (MLX compiles Metal shaders; `swift build` cannot).
 set -euo pipefail
@@ -15,7 +15,7 @@ DERIVED="$ROOT/.build-xcode"
 PRODUCTS="$DERIVED/Build/Products/$CONFIG"
 
 build_scheme() {
-    xcrun xcodebuild -scheme "${1:-TabType}" -configuration "$CONFIG" \
+    xcrun xcodebuild -scheme "${1:-S1S}" -configuration "$CONFIG" \
         -destination 'platform=macOS' \
         -derivedDataPath "$DERIVED" \
         -skipPackagePluginValidation -skipMacroValidation build
@@ -24,19 +24,19 @@ build_scheme() {
 cmd="${1:-app}"
 case "$cmd" in
 gencli)
-    build_scheme tabtype-gencli
-    echo "Built: $PRODUCTS/tabtype-gencli"
+    build_scheme s1s-gencli
+    echo "Built: $PRODUCTS/s1s-gencli"
     ;;
 app)
     build_scheme
 
-    APP="$ROOT/dist/TabType.app"
+    APP="$ROOT/dist/S1S.app"
     echo "Bundling $APP …"
     rm -rf "$APP"
     mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
     # Executable
-    cp "$PRODUCTS/TabType" "$APP/Contents/MacOS/TabType"
+    cp "$PRODUCTS/S1S" "$APP/Contents/MacOS/S1S"
 
     # SwiftPM resource bundles (emoji.json, tokenizer configs, …). These are found at
     # runtime via `Bundle.module`, whose accessor searches Bundle.main.resourceURL
@@ -69,20 +69,20 @@ app)
     if security find-identity -v -p codesigning 2>/dev/null | grep -q "$IDENTITY"; then
         echo "Signing with \"$IDENTITY\" (stable — permissions persist)."
         codesign --force --deep --sign "$IDENTITY" \
-            --identifier app.tabtype.TabType \
-            --entitlements "$ROOT/Resources/TabType.entitlements" \
+            --identifier app.s1s.S1S \
+            --entitlements "$ROOT/Resources/S1S.entitlements" \
             "$APP"
     else
         ADHOC=1
         echo "Signing ad-hoc (run Scripts/setup-signing.sh to persist permissions)."
         codesign --force --deep --sign - \
-            --identifier app.tabtype.TabType \
-            --entitlements "$ROOT/Resources/TabType.entitlements" \
+            --identifier app.s1s.S1S \
+            --entitlements "$ROOT/Resources/S1S.entitlements" \
             "$APP" 2>/dev/null || codesign --force --deep --sign - "$APP"
     fi
 
     echo "Done: $APP"
-    echo "Run:  open \"$APP\"   (or: \"$APP/Contents/MacOS/TabType\" to see logs)"
+    echo "Run:  open \"$APP\"   (or: \"$APP/Contents/MacOS/S1S\" to see logs)"
     if [ "${ADHOC:-0}" = 1 ]; then
         cat >&2 <<'WARN'
 

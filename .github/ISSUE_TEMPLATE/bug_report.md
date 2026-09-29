@@ -20,8 +20,8 @@ e.g. Slack, Safari (which site?), Notes, VS Code…
 **Environment**
 - macOS version:
 - Mac model (chip):
-- TabType version (menu bar ▸ About):
+- S1S version (menu bar ▸ About):
 - Model in use (Settings ▸ Engine & Model):
 
 **Log** (optional but very helpful)
-Enable Settings ▸ Advanced ▸ Verbose logging, reproduce, then paste relevant lines from `~/Library/Logs/TabType/tabtype.log`.
+Enable Settings ▸ Advanced ▸ Verbose logging, reproduce, then paste relevant lines from `~/Library/Logs/S1S/s1s.log`.

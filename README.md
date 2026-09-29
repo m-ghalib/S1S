@@ -1,10 +1,12 @@
 <div align="center">
 
-# ⌨️ TabType
+# ⌨️ S1S
 
 ### A free, open-source, 100% on-device AI autocomplete for macOS
 
-**TabType predicts your next words as you type — in almost any app — and runs entirely on your Mac. No cloud. No account. No subscription. No telemetry.** It's an open-source [Cotypist](https://cotypist.app/) alternative that learns your voice and never sends a keystroke off your machine.
+**S1S predicts your next words as you type — in almost any app — and runs entirely on your Mac. No cloud. No account. No subscription. No telemetry.** It's an open-source [Cotypist](https://cotypist.app/) alternative that learns your voice and never sends a keystroke off your machine.
+
+S1S is a fork of [TabType](https://github.com/nilava/TabType). Its name comes from S1S, the monadic second-order theory of one successor: autocomplete predicts the successor.
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Platform: macOS 14+](https://img.shields.io/badge/Platform-macOS%2014%2B-black?logo=apple)
@@ -15,7 +17,7 @@
 <em>Keywords: Cotypist alternative · open source macOS autocomplete · local AI text prediction Mac · on-device LLM typing assistant · private ghost-text completion</em>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="TabType demo — ghost-text suggestion appearing inline and being accepted word-by-word with Tab" width="820">
+  <img src="docs/demo.gif" alt="S1S demo — ghost-text suggestion appearing inline and being accepted word-by-word with Tab" width="820">
 </p>
 
 </div>
@@ -27,11 +29,11 @@
 >
 > **This is an early alpha.** It works and it's genuinely useful day-to-day, but expect rough edges. It's an open-source project that **needs your help** — [try it](#-install), [file issues](../../issues), and [send PRs](CONTRIBUTING.md). Bug reports on specific apps are the single most valuable contribution right now.
 >
-> **Built by a senior full-stack engineer (5+ years), in the open, with heavy use of AI.** Full transparency: AI was a real power tool throughout. The **code** was written with AI coding-assistant help; the **app icon/artwork and the documentation are AI-generated**; and **suggestions come from a third-party open-weights LLM** (Qwen3) running locally — TabType trains no models and reviews no output. This is still **not** a thin "AI generated a wrapper" app — it's a native macOS app with a hand-tuned local-inference pipeline and 50+ tests, with a human accountable for the architecture, debugging, and result. **See the complete [AI disclosure below](#-full-ai-disclosure--who-and-what-built-this).**
+> **Built by a senior full-stack engineer (5+ years), in the open, with heavy use of AI.** Full transparency: AI was a real power tool throughout. The **code** was written with AI coding-assistant help; the **app icon/artwork and the documentation are AI-generated**; and **suggestions come from a third-party open-weights LLM** (Qwen3.5 or Gemma 4) running locally — S1S trains no models and reviews no output. This is still **not** a thin "AI generated a wrapper" app — it's a native macOS app with a hand-tuned local-inference pipeline and 50+ tests, with a human accountable for the architecture, debugging, and result. **See the complete [AI disclosure below](#-full-ai-disclosure--who-and-what-built-this).**
 
 ## 🙌 Help wanted — let's build the best open autocomplete for Mac
 
-TabType is a solo, spare-time, non-commercial project, and it will only get better with a community around it. **If you find it useful, please pitch in** — every bit genuinely moves the needle:
+S1S is a solo, spare-time, non-commercial project, and it will only get better with a community around it. **If you find it useful, please pitch in** — every bit genuinely moves the needle:
 
 - ⭐ **Star the repo** so others can find a free, private Cotypist alternative.
 - 🐞 **Report bugs** — especially "ghost text is off in _app X_" or "no suggestions in _app Y_." These are the highest-value reports right now. [Open an issue »](../../issues/new/choose)
@@ -43,7 +45,7 @@ No corporate backing, no paid tier, no ads — just trying to make something gre
 
 ## What it is
 
-As you type, TabType shows a dimmed **ghost-text** prediction of what comes next. Press **Tab** to accept a word, again for the next, or accept the whole thing at once. A local language model ([Qwen3.5](https://huggingface.co/mlx-community/Qwen3.5-2B-4bit) via Apple's [MLX](https://github.com/ml-explore/mlx); TabType picks a speed and accuracy level that suits your Mac's chip and memory, and Settings offers three simple choices: Fastest, Balanced, and Most accurate) generates the suggestions, personalized to how *you* write — and it all happens on-device.
+As you type, S1S shows a dimmed **ghost-text** prediction of what comes next. Press **Tab** to accept a word, again for the next, or accept the whole thing at once. A local language model ([Qwen3.5](https://huggingface.co/mlx-community/Qwen3.5-2B-4bit) via Apple's [MLX](https://github.com/ml-explore/mlx); S1S picks a speed and accuracy level that suits your Mac's chip and memory, and Settings offers three simple choices: Fastest, Balanced, and Most accurate) generates the suggestions, personalized to how *you* write — and it all happens on-device.
 
 ## ✨ Features
 
@@ -66,18 +68,19 @@ As you type, TabType shows a dimmed **ghost-text** prediction of what comes next
 - Password fields and password managers are never read
 
 **Models**
-- Curated [MLX](https://github.com/ml-explore/mlx) catalog (Qwen3, Gemma) + load any custom Hugging Face model
+- Curated [MLX](https://github.com/ml-explore/mlx) catalog (Qwen3.5, Gemma 4) + load any custom Hugging Face model
 - Optional **Apple Intelligence** engine on supported macOS 26 Macs (no download)
 
 **Control**
 - Per-app and per-website policies (tone, language, enable/disable, mid-line behavior)
 - Code editors get suggestions only in chat panels, never the main editor
+- Stays quiet outside text fields, such as in games, Finder, or web-page keyboard shortcuts
 - Low Power Mode tuning, force-activate & per-app pause shortcuts
 - Inline `:emoji` and local autocorrect (incl. 6 Indian languages)
 
-## 🆚 How TabType compares
+## 🆚 How S1S compares
 
-| | **TabType** | **Cotypist** | **Copilot / OS predictive text** |
+| | **S1S** | **Cotypist** | **Copilot / OS predictive text** |
 |---|:---:|:---:|:---:|
 | Price | **Free forever** | Freemium (paid tier) | Free / paid |
 | Open source | **✅ MIT** | ❌ | ❌ |
@@ -87,16 +90,16 @@ As you type, TabType shows a dimmed **ghost-text** prediction of what comes next
 | Screen / conversation context | ✅ AX tree + OCR | ✅ | ❌ |
 | Notarized / polished | ⚠️ alpha, unnotarized | ✅ | ✅ |
 
-**vs [Cotypist](https://cotypist.app/)** — the closest comparison and our north star. TabType matches its core: on-device models, screen/accessibility context, personalization, text mirroring, speculative "parked" generation, and word alternatives. Cotypist is more polished, notarized, and has a paid tier; TabType is **free, open-source, and account-free**. We're the open project working toward Cotypist-grade quality.
+**vs [Cotypist](https://cotypist.app/)** — the closest comparison and our north star. S1S matches its core: on-device models, screen/accessibility context, personalization, text mirroring, speculative "parked" generation, and word alternatives. Cotypist is more polished, notarized, and has a paid tier; S1S is **free, open-source, and account-free**. We're the open project working toward Cotypist-grade quality.
 
 ### vs the open-source alternatives
 
-There are a few other open-source macOS autocomplete projects — each great in its own way. Here's how TabType compares (and huge thanks to all of them for charting the path):
+There are a few other open-source macOS autocomplete projects — each great in its own way. Here's how S1S compares (and huge thanks to all of them for charting the path):
 
-| | **TabType** | **[Sombra](https://github.com/andlsac/Sombra)** | **[KeyType](https://github.com/johnbean393/KeyType)** | **cotabby** |
+| | **S1S** | **[Sombra](https://github.com/andlsac/Sombra)** | **[KeyType](https://github.com/johnbean393/KeyType)** | **cotabby** |
 |---|:---:|:---:|:---:|:---:|
 | Open source | ✅ MIT | ✅ | ✅ | ✅ |
-| Inference backend | MLX (Qwen3) | llama.cpp | on-device LLM | on-device LLM |
+| Inference backend | MLX (Qwen3.5, Gemma 4) | llama.cpp | on-device LLM | on-device LLM |
 | Context: screen OCR | ✅ | ✅ | — | ✅ focused window |
 | Context: accessibility-tree transcript | ✅ | — | — | — |
 | Remembers your recent messages / writing | ✅ | — | — | — |
@@ -107,26 +110,28 @@ There are a few other open-source macOS autocomplete projects — each great in 
 | Per-app & per-domain policies | ✅ | per-app | — | — |
 | Apple Intelligence engine | ✅ | — | — | — |
 
-**Where each shines:** [Sombra](https://github.com/andlsac/Sombra) pairs llama.cpp with fast macOS-dictionary completions — a clean, lightweight approach. [KeyType](https://github.com/johnbean393/KeyType) explores constrained/grammar decoding for tightly-shaped output. cotabby pioneered focused-window OCR context. TabType's bet is **deeper context** (accessibility-tree transcripts, your recent messages, phrase memory) and **Cotypist-grade UX** (speculative parking, mirror rendering, per-app policies). See the [detailed comparison](docs/COMPARISON.md).
+**Where each shines:** [Sombra](https://github.com/andlsac/Sombra) pairs llama.cpp with fast macOS-dictionary completions — a clean, lightweight approach. [KeyType](https://github.com/johnbean393/KeyType) explores constrained/grammar decoding for tightly-shaped output. cotabby pioneered focused-window OCR context. S1S's bet is **deeper context** (accessibility-tree transcripts, your recent messages, phrase memory) and **Cotypist-grade UX** (speculative parking, mirror rendering, per-app policies). See the [detailed comparison](docs/COMPARISON.md).
 
 ## 📦 Install
 
 > [!NOTE]
-> TabType has no Apple Developer account behind it (it's free and non-commercial — see below), so it is **not notarized**. macOS will warn you the first time. This is expected for open-source Mac apps; here's the one-time approval.
+> S1S has no Apple Developer account behind it (it's free and non-commercial — see below), so it is **not notarized**. macOS will warn you the first time. This is expected for open-source Mac apps; here's the one-time approval.
 
-1. **Download** the latest `TabType-x.y.z.dmg` from [Releases](../../releases).
-2. Open the DMG and **drag TabType to Applications**.
-3. Launch it. macOS says *"TabType cannot be opened because Apple cannot check it for malicious software."* Click **Done** (not Move to Trash).
-4. Open **System Settings ▸ Privacy & Security**, scroll down, and click **"Open Anyway"** next to TabType. Confirm.
-   - *Power users, instead of steps 3–4:* `xattr -dr com.apple.quarantine /Applications/TabType.app`
-5. Grant **Accessibility** when prompted (required — it's how TabType reads the text field and inserts completions). **Screen Recording** is optional (improves context in non-chat apps).
-6. **First launch downloads the model** (~1.8–6 GB from Hugging Face, depending on the model you choose). The menu-bar icon shows progress; suggestions start once it's ready.
+1. **Download** the latest `S1S-x.y.z.dmg` from [Releases](../../releases).
+2. Open the DMG and **drag S1S to Applications**.
+3. Launch it. macOS says *"S1S cannot be opened because Apple cannot check it for malicious software."* Click **Done** (not Move to Trash).
+4. Open **System Settings ▸ Privacy & Security**, scroll down, and click **"Open Anyway"** next to S1S. Confirm.
+   - *Power users, instead of steps 3–4:* `xattr -dr com.apple.quarantine /Applications/S1S.app`
+5. Grant **Accessibility** when prompted (required — it's how S1S reads the text field and inserts completions). **Screen Recording** is optional (improves context in non-chat apps).
+6. **First launch downloads the model** (~1.8–6.7 GB from Hugging Face, depending on the model S1S picks for your Mac or the one you choose). The menu-bar icon shows progress; suggestions start once it's ready.
 
 **Requirements:** Apple Silicon Mac (M1 or later), macOS 14+.
 
+**Upgrading from TabType?** S1S is the same app under a new name and bundle ID. On first launch it moves your TabType settings, downloaded models, and typing history over, so nothing is downloaded again. macOS treats S1S as a new app, so grant **Accessibility** (and Screen Recording, if you used it) once more, then remove the old TabType entries from Privacy & Security and move `TabType.app` to the Trash.
+
 ## 🔒 Privacy
 
-Nothing you type leaves your machine. Inference is 100% local. The only network request TabType ever makes is downloading the model from Hugging Face on first run. Typing history (opt-in, off by default) is AES-encrypted with a key in your Keychain.
+Nothing you type leaves your machine. Inference is 100% local. The only network request S1S ever makes is downloading the model from Hugging Face on first run. Typing history (opt-in, off by default) is AES-encrypted with a key in your Keychain.
 
 ## 🛠 Build from source
 
@@ -139,7 +144,7 @@ xcodebuild -downloadComponent MetalToolchain
 ./Scripts/setup-signing.sh
 
 # Build + run
-./Scripts/build.sh app && open dist/TabType.app
+./Scripts/build.sh app && open dist/S1S.app
 
 # Run tests
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
@@ -163,7 +168,7 @@ Personalization (`PhraseMemory`, `TypingHistoryStore`), per-app rules (`AppPolic
 
 ## 🙋 Full AI disclosure — who and what built this
 
-TabType is built by a **senior full-stack engineer with 5+ years of experience**, in the open, **with heavy use of AI**. In the spirit of transparency, here is a complete accounting of what in this project is AI-generated:
+S1S is built by a **senior full-stack engineer with 5+ years of experience**, in the open, **with heavy use of AI**. In the spirit of transparency, here is a complete accounting of what in this project is AI-generated:
 
 **Code** — Written with heavy AI coding-assistant help (in the [Claude Code](https://claude.com/claude-code) style), directed, reviewed, debugged, and architected by the author. This is **not** a thin "AI generated a wrapper" app: it's a native macOS application with a hand-tuned local-inference pipeline, reverse-engineering work to reach parity with the best in the category, careful Accessibility/Gatekeeper/AppKit integration, and 50+ tests. AI accelerated the typing; the engineering judgment and the hundreds of small correctness decisions are the author's.
 
@@ -171,9 +176,9 @@ TabType is built by a **senior full-stack engineer with 5+ years of experience**
 
 **Documentation** — This README and the other docs (`CONTRIBUTING.md`, `RELEASING.md`, `docs/COMPARISON.md`, issue templates) were **written with AI assistance** and reviewed by the author.
 
-**The completion model** — Suggestions come from a **third-party, open-weights language model** (by default [Qwen3.5 2B](https://huggingface.co/mlx-community/Qwen3.5-2B-4bit) from Alibaba's Qwen team; larger Qwen3.5 models and Google's Gemma 4 are also selectable). TabType did **not** train or fine-tune any model — it runs these pre-trained weights locally via [MLX](https://github.com/ml-explore/mlx). Their training data and behavior are the model authors', governed by their respective licenses (e.g. the Qwen and Gemma terms).
+**The completion model** — Suggestions come from a **third-party, open-weights language model** (by default [Qwen3.5 2B](https://huggingface.co/mlx-community/Qwen3.5-2B-4bit) from Alibaba's Qwen team; larger Qwen3.5 models and Google's Gemma 4 are also selectable). S1S did **not** train or fine-tune any model — it runs these pre-trained weights locally via [MLX](https://github.com/ml-explore/mlx). Their training data and behavior are the model authors', governed by their respective licenses (e.g. the Qwen and Gemma terms).
 
-**Runtime output provenance** — Every suggestion you see is **generated on-device by that language model** from your local context (the text you're typing, your recent messages/writing, and — with permission — nearby on-screen text). Outputs are probabilistic and **not curated, fact-checked, or reviewed** by a human or by us; treat them like any LLM output — they can be wrong, biased, or inappropriate. Nothing is sent to a server; generation is 100% local. TabType does not collect, transmit, or train on your text.
+**Runtime output provenance** — Every suggestion you see is **generated on-device by that language model** from your local context (the text you're typing, your recent messages/writing, and — with permission — nearby on-screen text). Outputs are probabilistic and **not curated, fact-checked, or reviewed** by a human or by us; treat them like any LLM output — they can be wrong, biased, or inappropriate. Nothing is sent to a server; generation is 100% local. S1S does not collect, transmit, or train on your text.
 
 **What is *not* AI** — the product direction, architecture, the decision of what to build and how it should feel, the debugging, and the responsibility for the result. A human is accountable for this software.
 
@@ -183,8 +188,8 @@ This is an alpha that wants collaborators. Great first contributions: per-app ex
 
 ## 📄 License
 
-[MIT](LICENSE) — free for anyone to use, modify, and distribute. **There is no paid tier and no plan to ever commercialize TabType.** Built for the community.
+[MIT](LICENSE) — free for anyone to use, modify, and distribute. **There is no paid tier and no plan to ever commercialize S1S.** Built for the community.
 
 ## 🙏 Credits
 
-[MLX](https://github.com/ml-explore/mlx) & [mlx-swift](https://github.com/ml-explore/mlx-swift-examples) · [Qwen](https://github.com/QwenLM/Qwen) & [Gemma](https://ai.google.dev/gemma) models · [swift-transformers](https://github.com/huggingface/swift-transformers). Inspiration from [Cotypist](https://cotypist.app/), [Sombra](https://github.com/andlsac/Sombra), and [KeyType](https://github.com/johnbean393/KeyType).
+Forked from [TabType](https://github.com/nilava/TabType) (MIT). [MLX](https://github.com/ml-explore/mlx) & [mlx-swift](https://github.com/ml-explore/mlx-swift-examples) · [Qwen](https://github.com/QwenLM/Qwen) & [Gemma](https://ai.google.dev/gemma) models · [swift-transformers](https://github.com/huggingface/swift-transformers). Inspiration from [Cotypist](https://cotypist.app/), [Sombra](https://github.com/andlsac/Sombra), and [KeyType](https://github.com/johnbean393/KeyType).

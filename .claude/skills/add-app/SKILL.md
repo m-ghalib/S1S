@@ -1,18 +1,18 @@
 ---
 name: add-app
 description: |
-  Adds TabType support for a new macOS app or website, then verifies it live in
+  Adds S1S support for a new macOS app or website, then verifies it live in
   the running app through computer use. Covers bundle-ID lookup, AX probing, the
   AppPolicy change and its XCTest, build and relaunch, the ghost-text test matrix,
   and recording defects in docs/ISSUES.md.
-  USE WHEN the user says "add <app> to tabtype", "support <app>", "add <site> as a
-  chat domain", "tabtype never works in <app>", "/add-app", or asks to extend app
+  USE WHEN the user says "add <app> to s1s", "support <app>", "add <site> as a
+  chat domain", "s1s never works in <app>", "/add-app", or asks to extend app
   or website coverage and test it. Not for regressions in an app that already
   worked; debug those from the log instead.
 argument-hint: "<app name | bundle id | website host>"
 ---
 
-# Add an app or website to TabType
+# Add an app or website to S1S
 
 Scripts live in `.claude/skills/add-app/scripts/`. Run everything from the repo root. `$S` below is the session scratchpad directory.
 
@@ -53,12 +53,12 @@ A change counts as done only after it is seen working in the target app. Past po
 | Role `AXTextArea`/`AXTextField`, a valid `AXSelectedTextRange`, caret bounds present | Supportable. Continue. |
 | Caret `loc=0` in a non-empty field | Blocker (Ghostty case). A policy cannot fix it. Report it and stop. |
 | No `AXSelectedTextRange`, or caret bounds show an error | Blocker for inline placement. Report it and ask how to proceed. |
-| `AXSecureTextField` | TabType stays silent by design. |
+| `AXSecureTextField` | S1S stays silent by design. |
 | `web area: AXURL=…` for a site | Domain policies can apply. If AXURL is missing, the host is nil and no domain policy fires. |
 
 ## 4. Choose the policy
 
-Edit `Sources/TabType/Core/AppPolicy.swift`. Most apps need only membership in existing sets in `AppPolicyStore`:
+Edit `Sources/S1S/Core/AppPolicy.swift`. Most apps need only membership in existing sets in `AppPolicyStore`:
 
 | App kind | Sets to join | Resulting traits |
 |---|---|---|
@@ -79,7 +79,7 @@ Edit `Sources/TabType/Core/AppPolicy.swift`. Most apps need only membership in e
 
 ## 5. Add the unit test
 
-1. Add `test<App>Policy` to `Tests/TabTypeTests/AppPolicyTests.swift` under a `// MARK: - <App>` header. Follow `testObsidianPolicy` and `testClaudeDesktopPolicy`. For a website, follow `testXAndLinkedInGetChatTreatmentInChrome`, including a negative host.
+1. Add `test<App>Policy` to `Tests/S1STests/AppPolicyTests.swift` under a `// MARK: - <App>` header. Follow `testObsidianPolicy` and `testClaudeDesktopPolicy`. For a website, follow `testXAndLinkedInGetChatTreatmentInChrome`, including a negative host.
 2. Run the tests:
    ```sh
    DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
@@ -94,12 +94,12 @@ Edit `Sources/TabType/Core/AppPolicy.swift`. Most apps need only membership in e
    grep -E "error:|Signing" "$S/build.log"
    ```
    Apply the signing check from CLAUDE.md's testing step 1. If the build is ad-hoc, stop and tell the user. Never run `setup-signing.sh` yourself (see `RELEASING.md`).
-2. Note the current logging setting, because `relaunch.sh` turns verbose logging on and verbose logs store screen text: `defaults read app.tabtype.TabType verboseLog`.
+2. Note the current logging setting, because `relaunch.sh` turns verbose logging on and verbose logs store screen text: `defaults read app.s1s.S1S verboseLog`.
 3. Relaunch and wait for warm-up:
    ```sh
    .claude/skills/add-app/scripts/relaunch.sh ADD-<app>
    ```
-   The script prints the launch line, the warm-up line, and the running binary path. The path must be the repo's `dist/TabType.app`, not a copy in `~/Applications`.
+   The script prints the launch line, the warm-up line, and the running binary path. The path must be the repo's `dist/S1S.app`, not a copy in `~/Applications`.
 4. If the script reports `ax=false`, ask the user to grant Accessibility (and Screen Recording if `screen=false`). Do not click the grant dialogs yourself. After the user grants access, run `relaunch.sh` again, because a running instance does not pick up a new grant.
 
 ## 7. Verify live with computer use
@@ -107,10 +107,10 @@ Edit `Sources/TabType/Core/AppPolicy.swift`. Most apps need only membership in e
 ### Setup
 
 1. Load the tools with one call: `ToolSearch` query `computer-use`, `max_results` 30.
-2. Call `request_access` for the target app, plus TextEdit and Notes if you changed shared code. Follow CLAUDE.md's testing step 5: never request TabType itself.
+2. Call `request_access` for the target app, plus TextEdit and Notes if you changed shared code. Follow CLAUDE.md's testing step 5: never request S1S itself.
 3. Start a log watch for this app:
    ```sh
-   grep -E "placement app=<bundle-id>|predict app=<bundle-id>|predict -> |chat-panels-only|skipped" ~/Library/Logs/TabType/tabtype.log | tail -20
+   grep -E "placement app=<bundle-id>|predict app=<bundle-id>|predict -> |chat-panels-only|skipped" ~/Library/Logs/S1S/s1s.log | tail -20
    ```
 
 ### Capture the ghost with `shot.sh`, not `screenshot`
@@ -149,7 +149,7 @@ Type with `computer_batch`: `[{type: "<phrase>"}, {wait: 3}]`. Then capture with
 
 Computer use grants browsers read-only access. Do not work around this with `osascript` keystrokes or synthetic CGEvent clicks.
 
-TabType sees keys through a CGEventTap. Playwright and other DOM or CDP typing never reach it. Use this order:
+S1S sees keys through a CGEventTap. Playwright and other DOM or CDP typing never reach it. Use this order:
 1. Open the page with the Safari MCP (`safari_navigate`) and focus the field with `safari_click`. If the site needs a login, ask the user to log in.
 2. Type with `safari_native_type` and press keys with `safari_native_keyboard`. Confirm that `predict app=com.apple.Safari` appears in the log. If it does not appear, these tools do not post OS-level keys; go to step 3.
 3. Otherwise, hand off to the user: ask them to type the test phrase, pause, and then press Tab, Shift+Tab, or Esc. Capture each state with `shot.sh` and read the log after each one.
@@ -167,7 +167,7 @@ Chromium browsers read the same way. Check that the `predict app=` line shows th
    - A pass or fail for each row of the matrix, with the capture path and the log line that shows it.
    - Any unverified bundle IDs, and any blockers.
    - Anything you could not drive yourself (for example, browser typing that was handed off).
-4. Restore `verboseLog` to the value noted in step 6. If it was unset, run `defaults delete app.tabtype.TabType verboseLog`.
+4. Restore `verboseLog` to the value noted in step 6. If it was unset, run `defaults delete app.s1s.S1S verboseLog`.
 5. Commit only when the user asks. Use this format:
    - Subject: `feat: add <App> support` or `fix: <symptom> in <App>`.
    - Body: bullets of the form "<App> gets <traits>", plus bundle-ID sources.

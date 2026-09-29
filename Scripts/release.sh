@@ -1,5 +1,5 @@
 #!/bin/bash
-# TabType release packager.
+# S1S release packager.
 #   ./Scripts/release.sh <version>       e.g. ./Scripts/release.sh 0.1.0
 #
 # Builds a signed .app, verifies it is signed with the STABLE self-signed identity
@@ -17,10 +17,10 @@ if [ -z "$VERSION" ]; then echo "usage: $0 <version>   (e.g. 0.1.0)" >&2; exit 1
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-APP="$ROOT/dist/TabType.app"
+APP="$ROOT/dist/S1S.app"
 PLIST="$ROOT/Resources/Info.plist"
 IDENTITY="${SIGN_IDENTITY:-TabType Dev}"
-CHANGELOG="$ROOT/Sources/TabType/Resources/CHANGELOG.md"
+CHANGELOG="$ROOT/Sources/S1S/Resources/CHANGELOG.md"
 # Ship optimized builds; the Debug config also instruments coverage.
 export CONFIG="${CONFIG:-Release}"
 
@@ -53,12 +53,12 @@ echo "Signed with a stable identity ✔"
 
 # 4) Package a drag-to-Applications DMG (hdiutil — no external tooling).
 STAGING="$ROOT/dist/dmg"
-DMG="$ROOT/dist/TabType-$VERSION.dmg"
+DMG="$ROOT/dist/S1S-$VERSION.dmg"
 rm -rf "$STAGING" "$DMG"
 mkdir -p "$STAGING"
 cp -R "$APP" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
-hdiutil create -volname "TabType $VERSION" -srcfolder "$STAGING" \
+hdiutil create -volname "S1S $VERSION" -srcfolder "$STAGING" \
     -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGING"
 

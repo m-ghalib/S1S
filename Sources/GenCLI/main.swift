@@ -1,4 +1,4 @@
-// TabType — MLX inference + suggestion-tuning harness.
+// S1S — MLX inference + suggestion-tuning harness.
 // Runs the model over several realistic prompts and prints the RAW output vs the
 // TRIMMED autocomplete suggestion, so we can tune length/relevance without the GUI.
 
@@ -16,7 +16,7 @@ import FoundationModels
 var args = Array(CommandLine.arguments.dropFirst())
 
 // --- Apple Intelligence (FoundationModels) validation path ---
-// Usage: tabtype-gencli --ai "the prompt text"
+// Usage: s1s-gencli --ai "the prompt text"
 if args.first == "--ai" {
     #if canImport(FoundationModels)
     if #available(macOS 26.0, *) {
@@ -83,7 +83,7 @@ func trimSuggestion(_ raw: String, maxWords: Int = 7) -> String {
 }
 
 FileHandle.standardError.write("Loading \(modelId) …\n".data(using: .utf8)!)
-// A local directory (e.g. TabType's model store) loads without downloading.
+// A local directory (e.g. S1S's model store) loads without downloading.
 var isDirectory: ObjCBool = false
 let configuration = FileManager.default.fileExists(atPath: modelId, isDirectory: &isDirectory) && isDirectory.boolValue
     ? ModelConfiguration(directory: URL(fileURLWithPath: modelId))
@@ -124,7 +124,7 @@ func complete(_ prompt: String, maxTok: Int) async throws -> (String, TimeInterv
 }
 
 // --- KV prefix-cache A/B validation (mirrors Predictor.PromptCache logic) ---
-// Usage: tabtype-gencli --model <id> --kvtest
+// Usage: s1s-gencli --model <id> --kvtest
 // Simulates consecutive keystrokes (growing prompt, shared system prefix) and checks
 // that cached generation (a) matches uncached output exactly, (b) prefills far fewer
 // tokens (reported as wall-clock).
@@ -207,10 +207,10 @@ if args.contains("--kvtest") {
 }
 
 // --- GPU buffer-cache growth check ---
-// Usage: [CACHE_LIMIT_MB=512] tabtype-gencli --model <id> --memtest [rounds]
+// Usage: [CACHE_LIMIT_MB=512] s1s-gencli --model <id> --memtest [rounds]
 // Prefills prompts of varying length (like context switches between apps) and
 // prints MLX active/cache memory plus latency. Without CACHE_LIMIT_MB, MLX keeps
-// its default cache limit (the memory limit), which is what TabType ran with
+// its default cache limit (the memory limit), which is what S1S ran with
 // before `Predictor.gpuCacheLimit`.
 if let i = args.firstIndex(of: "--memtest") {
     let rounds = (i + 1 < args.count ? Int(args[i + 1]) : nil) ?? 40
@@ -234,7 +234,7 @@ if let i = args.firstIndex(of: "--memtest") {
 }
 
 // --- Instruct-model check through the chat template (mirrors Predictor) ---
-// Usage: [SYSTEM_FILE=prompt.txt] tabtype-gencli --model <id> --chat [prompts…]
+// Usage: [SYSTEM_FILE=prompt.txt] s1s-gencli --model <id> --chat [prompts…]
 // Prints each suggestion with prefill and decode speed, and flags models that emit
 // <think> reasoning instead of a continuation.
 if let i = args.firstIndex(of: "--chat") {

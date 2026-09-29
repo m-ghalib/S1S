@@ -1,5 +1,5 @@
 #!/bin/bash
-# Print the next TabType version for a bump kind.
+# Print the next S1S version for a bump kind.
 # Usage: next-version.sh <release|hotfix|current>   (run from the repo root)
 #   release  0.1.4 -> 0.1.5, 0.1.4.2 -> 0.1.5   (third number +1, fourth dropped)
 #   hotfix   0.1.4 -> 0.1.4.1, 0.1.4.1 -> 0.1.4.2

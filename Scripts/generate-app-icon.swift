@@ -121,7 +121,7 @@ for points in [16, 32, 128, 256, 512] {
     try! render(pixels: points).write(to: iconset.appendingPathComponent("icon_\(points)x\(points).png"))
     try! render(pixels: points * 2).write(to: iconset.appendingPathComponent("icon_\(points)x\(points)@2x.png"))
 }
-try! render(pixels: 1024).write(to: URL(fileURLWithPath: "Sources/TabType/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"))
+try! render(pixels: 1024).write(to: URL(fileURLWithPath: "Sources/S1S/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png"))
 
 let iconutil = Process()
 iconutil.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
@@ -129,7 +129,7 @@ iconutil.arguments = ["-c", "icns", iconset.path, "-o", "Resources/AppIcon.icns"
 try! iconutil.run()
 iconutil.waitUntilExit()
 precondition(iconutil.terminationStatus == 0, "iconutil failed")
-let menuBarSet = "Sources/TabType/Resources/Assets.xcassets/MenuBarIcon.imageset/"
+let menuBarSet = "Sources/S1S/Resources/Assets.xcassets/MenuBarIcon.imageset/"
 try! renderMenuBar(scale: 1).write(to: URL(fileURLWithPath: menuBarSet + "MenuBarIcon.png"))
 try! renderMenuBar(scale: 2).write(to: URL(fileURLWithPath: menuBarSet + "MenuBarIcon@2x.png"))
 print("Wrote Resources/AppIcon.icns, AppIcon.appiconset/AppIcon.png, and MenuBarIcon.imageset")

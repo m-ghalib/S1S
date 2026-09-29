@@ -1,5 +1,5 @@
 #!/bin/bash
-# Capture a region that INCLUDES the TabType ghost overlay.
+# Capture a region that INCLUDES the S1S ghost overlay.
 # Computer-use screenshots filter the overlay out, so ghost checks must use this.
 # Usage:
 #   shot.sh <out.png> window <process-name>      # front window of that process

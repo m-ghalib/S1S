@@ -2,13 +2,13 @@
 import PackageDescription
 
 let package = Package(
-    name: "TabType",
+    name: "S1S",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "TabType", targets: ["TabType"]),
-        .executable(name: "tabtype-gencli", targets: ["GenCLI"]),
+        .executable(name: "S1S", targets: ["S1S"]),
+        .executable(name: "s1s-gencli", targets: ["GenCLI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/ml-explore/mlx-swift-lm", from: "3.0.0"),
@@ -21,7 +21,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "TabType",
+            name: "S1S",
             dependencies: [
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
@@ -30,7 +30,7 @@ let package = Package(
                 .product(name: "HuggingFace", package: "swift-huggingface"),
                 .product(name: "Tokenizers", package: "swift-transformers"),
             ],
-            path: "Sources/TabType",
+            path: "Sources/S1S",
             resources: [
                 .process("Resources/Assets.xcassets"),
                 .process("Resources/emoji.json"),
@@ -62,9 +62,9 @@ let package = Package(
             path: "Sources/GenCLI"
         ),
         .testTarget(
-            name: "TabTypeTests",
-            dependencies: ["TabType"],
-            path: "Tests/TabTypeTests"
+            name: "S1STests",
+            dependencies: ["S1S"],
+            path: "Tests/S1STests"
         ),
     ]
 )

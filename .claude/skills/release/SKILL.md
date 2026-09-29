@@ -1,18 +1,18 @@
 ---
 name: release
 description: |
-  Cuts a TabType release: bumps the version (release 0.1.4 -> 0.1.5, or hotfix
+  Cuts a S1S release: bumps the version (release 0.1.4 -> 0.1.5, or hotfix
   0.1.4 -> 0.1.4.1), writes the in-app release notes, builds the signed Release
   app and DMG into dist/, replaces the installed copy in /Applications, and, only
   when the user asks, tags and publishes a GitHub release.
   USE WHEN the user says "release", "cut a release", "ship 0.1.5", "hotfix
   release", "new dist and install it", "bump the version", "/release", or asks to
-  publish a GitHub release of TabType. Not for a plain dev rebuild; use
+  publish a GitHub release of S1S. Not for a plain dev rebuild; use
   ./Scripts/build.sh app for that.
 argument-hint: "[release|hotfix|current] [github]"
 ---
 
-# Release TabType
+# Release S1S
 
 Run everything from the repo root. Scripts live in `.claude/skills/release/scripts/`.
 
@@ -45,7 +45,7 @@ Stop and report if any check fails.
 
 ## 3. Write the release notes
 
-The app bundles `Sources/TabType/Resources/CHANGELOG.md` and shows the section for its own version in **Settings ▸ About ▸ What's New**. It opens that page once after an update. `Scripts/release.sh` refuses to build a version that has no section.
+The app bundles `Sources/S1S/Resources/CHANGELOG.md` and shows the section for its own version in **Settings ▸ About ▸ What's New**. It opens that page once after an update. `Scripts/release.sh` refuses to build a version that has no section.
 
 1. Collect the changes since the latest tag:
    ```sh
@@ -74,25 +74,25 @@ The app bundles `Sources/TabType/Resources/CHANGELOG.md` and shows the section f
    ```sh
    ./Scripts/release.sh <version>
    ```
-   The script checks the changelog section, stamps the version and build number into `Resources/Info.plist`, builds with `CONFIG=Release`, refuses ad-hoc signatures, and writes `dist/TabType.app` and `dist/TabType-<version>.dmg`. Keep the SHA-256 it prints for step 7.
+   The script checks the changelog section, stamps the version and build number into `Resources/Info.plist`, builds with `CONFIG=Release`, refuses ad-hoc signatures, and writes `dist/S1S.app` and `dist/S1S-<version>.dmg`. Keep the SHA-256 it prints for step 7.
 2. Verify the bundle:
    ```sh
-   plutil -extract CFBundleShortVersionString raw dist/TabType.app/Contents/Info.plist   # expect <version>
-   find dist/TabType.app -name CHANGELOG.md                                              # expect one match
-   codesign -dvv dist/TabType.app 2>&1 | grep Authority=                                 # expect TabType Dev
+   plutil -extract CFBundleShortVersionString raw dist/S1S.app/Contents/Info.plist   # expect <version>
+   find dist/S1S.app -name CHANGELOG.md                                              # expect one match
+   codesign -dvv dist/S1S.app 2>&1 | grep Authority=                                 # expect TabType Dev
    ```
 
 ## 5. Replace the installed app
 
-This step quits TabType and moves every installed copy (`/Applications/TabType.app`, `~/Applications/TabType.app`) to the Trash. The Accessibility grant survives, because the new copy has the same signing identity.
+This step quits S1S and moves every installed copy (`/Applications/S1S.app`, `~/Applications/S1S.app`) to the Trash. The Accessibility grant survives, because the new copy has the same signing identity.
 
 1. Run:
    ```sh
    .claude/skills/release/scripts/install-app.sh --open
    ```
-2. Check the launch line in `~/Library/Logs/TabType/tabtype.log`:
+2. Check the launch line in `~/Library/Logs/S1S/s1s.log`:
    ```sh
-   grep "TabType launched" ~/Library/Logs/TabType/tabtype.log | tail -1
+   grep "S1S launched" ~/Library/Logs/S1S/s1s.log | tail -1
    ```
    Expect `version=<version>` and `ax=true`. If the installed version was older, also expect an `announcing release notes for <version>` line, and the Settings window opens on What's New.
 3. Capture the What's New page with `screencapture -x "$S/whatsnew.png"` (`$S` is the session scratchpad) and read it. Confirm the version and the bullets. If the page did not open by itself, open it from the menu-bar item **What's New**.
@@ -102,7 +102,7 @@ This step quits TabType and moves every installed copy (`/Applications/TabType.a
 Commit the version stamp and the notes together:
 
 ```sh
-git add Resources/Info.plist Sources/TabType/Resources/CHANGELOG.md
+git add Resources/Info.plist Sources/S1S/Resources/CHANGELOG.md
 git commit -m "chore: release <version>"
 ```
 
@@ -130,12 +130,12 @@ Pushing a tag and publishing a release are outward-facing. Confirm with the user
 
    ### Install
 
-   TabType is not notarized (it is free and non-commercial), so macOS shows a warning the first time.
+   S1S is not notarized (it is free and non-commercial), so macOS shows a warning the first time.
 
-   1. Download `TabType-<version>.dmg` below, open it, and drag **TabType** to **Applications**.
+   1. Download `S1S-<version>.dmg` below, open it, and drag **S1S** to **Applications**.
    2. Launch it. macOS says it "cannot be opened." Click **Done**.
-   3. Open **System Settings ▸ Privacy & Security**, and click **Open Anyway** next to TabType. Confirm.
-      - Or in Terminal: `xattr -dr com.apple.quarantine /Applications/TabType.app`
+   3. Open **System Settings ▸ Privacy & Security**, and click **Open Anyway** next to S1S. Confirm.
+      - Or in Terminal: `xattr -dr com.apple.quarantine /Applications/S1S.app`
    4. Grant **Accessibility** when asked (required). Screen Recording is optional.
    5. First launch downloads the model (~0.3–4.3 GB, depending on RAM). The menu-bar icon shows progress.
 
@@ -147,8 +147,8 @@ Pushing a tag and publishing a release are outward-facing. Confirm with the user
    ```
 4. Publish as a pre-release, like earlier releases. Make the title tagline a few words from the top bullets:
    ```sh
-   gh release create v<version> dist/TabType-<version>.dmg --repo "$REPO" --prerelease \
-     --title "TabType v<version>: <tagline>" --notes-file "$S/release-body.md"
+   gh release create v<version> dist/S1S-<version>.dmg --repo "$REPO" --prerelease \
+     --title "S1S v<version>: <tagline>" --notes-file "$S/release-body.md"
    ```
 5. Report the release URL that `gh` prints.
 

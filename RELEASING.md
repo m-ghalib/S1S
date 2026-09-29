@@ -1,6 +1,6 @@
-# Releasing TabType
+# Releasing S1S
 
-TabType ships as a **signed-but-unnotarized DMG** on GitHub Releases (no Apple Developer account). This guide is for the maintainer.
+S1S ships as a **signed-but-unnotarized DMG** on GitHub Releases (no Apple Developer account). This guide is for the maintainer.
 
 ## The signing identity is load-bearing
 
@@ -12,18 +12,18 @@ Every release **must** be signed with the same stable self-signed identity (`Tab
 
 In Claude Code, `/release` (skill in `.claude/skills/release/`) runs the steps below, installs the build in `/Applications`, and publishes to GitHub on request.
 
-Add a `## 0.1.0` section to `Sources/TabType/Resources/CHANGELOG.md` first. The app shows it in **Settings ▸ About ▸ What's New** and opens that page once after an update. The script refuses a version without a section.
+Add a `## 0.1.0` section to `Sources/S1S/Resources/CHANGELOG.md` first. The app shows it in **Settings ▸ About ▸ What's New** and opens that page once after an update. The script refuses a version without a section.
 
 ```sh
 ./Scripts/release.sh 0.1.0
 ```
 
-This bumps the version in `Info.plist`, builds with `CONFIG=Release`, verifies the signature is stable (not ad-hoc), and produces `dist/TabType-0.1.0.dmg` with a drag-to-Applications layout. It prints the SHA-256 and next steps.
+This bumps the version in `Info.plist`, builds with `CONFIG=Release`, verifies the signature is stable (not ad-hoc), and produces `dist/S1S-0.1.0.dmg` with a drag-to-Applications layout. It prints the SHA-256 and next steps.
 
 Then:
 
 1. `git tag v0.1.0 && git push --tags`
-2. Create a GitHub Release for the tag; upload `dist/TabType-0.1.0.dmg`.
+2. Create a GitHub Release for the tag; upload `dist/S1S-0.1.0.dmg`.
 3. Paste the install notes below into the release description.
 
 ## Release-notes install snippet (paste into every release)
@@ -31,12 +31,12 @@ Then:
 ```markdown
 ### Install
 
-TabType isn't notarized (it's free and non-commercial), so macOS shows a warning the first time.
+S1S isn't notarized (it's free and non-commercial), so macOS shows a warning the first time.
 
-1. Download the DMG, open it, drag **TabType** to **Applications**.
+1. Download the DMG, open it, drag **S1S** to **Applications**.
 2. Launch it — macOS says it "cannot be opened." Click **Done**.
-3. **System Settings ▸ Privacy & Security ▸ "Open Anyway"** next to TabType, then confirm.
-   - Or in Terminal: `xattr -dr com.apple.quarantine /Applications/TabType.app`
+3. **System Settings ▸ Privacy & Security ▸ "Open Anyway"** next to S1S, then confirm.
+   - Or in Terminal: `xattr -dr com.apple.quarantine /Applications/S1S.app`
 4. Grant **Accessibility** when asked (required). Screen Recording is optional.
 5. First launch downloads the model (~2.3 GB) — the menu-bar icon shows progress.
 
@@ -46,7 +46,7 @@ Apple Silicon Mac, macOS 14+.
 ## Verify before publishing
 
 ```sh
-codesign -dvv dist/TabType.app     # Authority should be "TabType Dev", NOT "Signature=adhoc"
-spctl -a -vv dist/TabType.app      # will report "rejected / unnotarized" — expected, that's fine
-hdiutil verify dist/TabType-<v>.dmg
+codesign -dvv dist/S1S.app     # Authority should be "TabType Dev", NOT "Signature=adhoc"
+spctl -a -vv dist/S1S.app      # will report "rejected / unnotarized" — expected, that's fine
+hdiutil verify dist/S1S-<v>.dmg
 ```

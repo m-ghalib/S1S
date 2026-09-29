@@ -5,8 +5,8 @@ Source: Ouroboros seed `seed_b26aba2cc6a5` (interview `interview_20260927_015106
 ## Requirements Description
 
 ### Background
-- **Business Problem**: TabType Settings has 13 flat sidebar panes (Setup, General, Engine & Model, Context, Personalization, Text Tools, Emoji, Shortcuts, Battery, Apps, Advanced, Statistics, About). Users must guess which pane holds a control. Some controls are duplicated; for example, the clipboard-context toggle appears in both `SetupPane.swift:64` and `ExtraPanes.swift:30`.
-- **Target Users**: TabType users who configure the app from the menu bar, including first-run users who still need to grant permissions or load a model.
+- **Business Problem**: S1S Settings has 13 flat sidebar panes (Setup, General, Engine & Model, Context, Personalization, Text Tools, Emoji, Shortcuts, Battery, Apps, Advanced, Statistics, About). Users must guess which pane holds a control. Some controls are duplicated; for example, the clipboard-context toggle appears in both `SetupPane.swift:64` and `ExtraPanes.swift:30`.
+- **Target Users**: S1S users who configure the app from the menu bar, including first-run users who still need to grant permissions or load a model.
 - **Value Proposition**: Four task-based items make common tasks reachable within two clicks. Each setting has one owner, and permission fixes are in one predictable place.
 
 ### Feature Overview
@@ -21,7 +21,7 @@ Source: Ouroboros seed `seed_b26aba2cc6a5` (interview `interview_20260927_015106
   - Out of scope: a fifth item, a separate Privacy & Data section, a search field, tabs or any other second navigation level, a global banner, and new settings.
 - **User Scenarios**:
   - A first-run user opens Settings, lands at Permissions, and grants Accessibility.
-  - A user disables TabType in one app through Apps and the per-app drill-in.
+  - A user disables S1S in one app through Apps and the per-app drill-in.
   - A user picks Statistics from the menu bar and lands on the Statistics section inside About.
 
 ### Detailed Requirements
@@ -44,7 +44,7 @@ Source: Ouroboros seed `seed_b26aba2cc6a5` (interview `interview_20260927_015106
 | Entry point | Destination |
 |---|---|
 | Menu-bar Statistics | About → Statistics section |
-| Menu-bar About TabType | About, top |
+| Menu-bar About S1S | About, top |
 | Default Settings action, when a required grant or the model is missing | Suggestions → Permissions |
 | Default Settings action, otherwise | Suggestions, top |
 
@@ -79,7 +79,7 @@ Source: Ouroboros seed `seed_b26aba2cc6a5` (interview `interview_20260927_015106
   - A setting is lost during the merge. Mitigation: before the change, build a checklist of every control in the 13 panes and tick each one after the change.
   - `ScrollViewReader` anchors inside `Form` can be unreliable on macOS. Mitigation: verify in the running app, and fall back to explicit `.id` on section headers.
 - **Dependency Risks**: None external.
-- **Schedule Risks**: Computer-use verification can be blocked (see memory note: `request_access` returns `notInstalled` for TabType). Mitigation: use the temporary `.regular` activation-policy workaround. If verification remains blocked, report the blocked task instead of claiming completion.
+- **Schedule Risks**: Computer-use verification can be blocked (see memory note: `request_access` returns `notInstalled` for S1S). Mitigation: use the temporary `.regular` activation-policy workaround. If verification remains blocked, report the blocked task instead of claiming completion.
 
 ## Acceptance Criteria
 
@@ -96,13 +96,13 @@ Source: Ouroboros seed `seed_b26aba2cc6a5` (interview `interview_20260927_015106
 
 ### Quality Standards
 - [ ] Code Quality: follows existing SwiftUI and `Form` patterns, and no dead pane enum cases remain.
-- [ ] Test Coverage: XCTest in `Tests/TabTypeTests/` covers the default-destination helper, the menu entry → destination mapping, and (if expressed as data) the complete item/section mapping. Run with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test`.
+- [ ] Test Coverage: XCTest in `Tests/S1STests/` covers the default-destination helper, the menu entry → destination mapping, and (if expressed as data) the complete item/section mapping. Run with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test`.
 - [ ] Performance Metrics: no perceptible lag when Settings opens.
 - [ ] Security Review: no new data access or network calls.
 
 ### User Acceptance
 - [ ] Computer-use test in the running app: each task below is reachable within two clicks of opening Settings.
-  - Disable TabType in a specific app.
+  - Disable S1S in a specific app.
   - Change the model.
   - Grant Accessibility.
   - Toggle emoji suggestions.

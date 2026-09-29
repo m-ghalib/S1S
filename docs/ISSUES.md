@@ -1,4 +1,4 @@
-# TabType Issue Tracker
+# S1S Issue Tracker
 
 Issues found during a manual test pass of a fresh local build. Each issue has an ID, a severity, a status, reproduction steps, and the evidence collected.
 
@@ -12,8 +12,8 @@ Issues found during a manual test pass of a fresh local build. Each issue has an
 | Build | `./Scripts/build.sh app` (Debug). Build succeeded. Signed ad-hoc. |
 | Tests | `swift test`: 97 tests, 0 failures |
 | Model | `mlx-community/Qwen3-4B-Instruct-2507-8bit` (already downloaded) |
-| Apps tested | TextEdit, Notes, TabType Settings, menu bar menu |
-| Method | Typing through computer use. The ghost overlay was checked with `screencapture`. Engine behavior was checked with `~/Library/Logs/TabType/tabtype.log` (verbose logging on during the test). |
+| Apps tested | TextEdit, Notes, S1S Settings, menu bar menu |
+| Method | Typing through computer use. The ghost overlay was checked with `screencapture`. Engine behavior was checked with `~/Library/Logs/S1S/s1s.log` (verbose logging on during the test). |
 
 ### What worked
 
@@ -34,7 +34,7 @@ Issues found during a manual test pass of a fresh local build. Each issue has an
 | Build | `./Scripts/build.sh app` (Debug), signed with "TabType Dev" |
 | Tests | `swift test`: 105 tests, 0 failures (8 new) |
 | Warnings | One left in project sources: the deprecated MLX `generate(input:context:iterator:didGenerate:)` call at `Predictor.swift:322`. It needs a migration to the AsyncStream API. |
-| Method | Typing through computer use in Notes and TextEdit. Ghost text was checked with `screencapture`, because computer-use screenshots hide the TabType overlay. Settings panes were driven with System Events and CGEvent clicks. |
+| Method | Typing through computer use in Notes and TextEdit. Ghost text was checked with `screencapture`, because computer-use screenshots hide the S1S overlay. Settings panes were driven with System Events and CGEvent clicks. |
 
 ## Summary
 
@@ -50,7 +50,7 @@ Issues found during a manual test pass of a fresh local build. Each issue has an
 | [TT-008](#tt-008) | Low | Fixed | Model catalog gives conflicting recommendations |
 | [TT-009](#tt-009) | Low | Fixed | Setup pane says "Free — no upgrade required" |
 | [TT-010](#tt-010) | Low | Fixed | Settings window resizes on the Apps pane and does not resize back |
-| [TT-011](#tt-011) | Low | Fixed | Apps list includes TabType itself |
+| [TT-011](#tt-011) | Low | Fixed | Apps list includes S1S itself |
 | [TT-012](#tt-012) | Low | Fixed | Six compiler warnings in project sources |
 | [TT-013](#tt-013) | Low | Fixed | Extra gap between accepted word and remaining ghost |
 | [TT-014](#tt-014) | Low | Fixed | Ad-hoc signed rebuilds lose the Accessibility grant |
@@ -68,7 +68,7 @@ Issues found during a manual test pass of a fresh local build. Each issue has an
 
 - **Severity:** High. The ghost overlaps real text, so the user cannot read what they typed or what is suggested.
 - **Status:** Fixed. Verified in Notes and TextEdit.
-- **Area:** `Sources/TabType/Core/SuggestionOverlay.swift` (`showWrapped`)
+- **Area:** `Sources/S1S/Core/SuggestionOverlay.swift` (`showWrapped`)
 
 **Steps to reproduce**
 
@@ -104,7 +104,7 @@ The same wrap path placed the ghost correctly in TextEdit, where the field is 58
 
 - **Severity:** Medium
 - **Status:** Fixed. Verified in TextEdit.
-- **Area:** `Sources/TabType/Core/Engine.swift`
+- **Area:** `Sources/S1S/Core/Engine.swift`
 
 **Steps to reproduce**
 
@@ -187,7 +187,7 @@ Later attempts with the same steps worked. `KeystrokeMonitor.handle` and `Engine
 
 - **Severity:** Low
 - **Status:** Fixed
-- **Area:** `Sources/TabType/Core/KeyBinding.swift:66`
+- **Area:** `Sources/S1S/Core/KeyBinding.swift:66`
 
 **Steps to reproduce:** Open Settings ▸ Shortcuts and look at "Force a suggestion".
 
@@ -201,7 +201,7 @@ Later attempts with the same steps worked. `KeystrokeMonitor.handle` and `Engine
 
 - **Severity:** Low
 - **Status:** Fixed
-- **Area:** `Sources/TabType/UI/Panes/ExtraPanes.swift:269`, `:275`
+- **Area:** `Sources/S1S/UI/Panes/ExtraPanes.swift:269`, `:275`
 
 **Steps to reproduce:** Open Settings ▸ Personalization and scroll to Custom AI Instructions.
 
@@ -217,22 +217,22 @@ Later attempts with the same steps worked. `KeystrokeMonitor.handle` and `Engine
 
 - **Severity:** Low
 - **Status:** Fixed
-- **Area:** `Sources/TabType/Core/ScreenContextProvider.swift:213`, `Sources/TabType/Core/Log.swift`
+- **Area:** `Sources/S1S/Core/ScreenContextProvider.swift:213`, `Sources/S1S/Core/Log.swift`
 
 **Observed**
 
-- On every launch, the info-level log (not only verbose) writes the first 60 characters of OCR text from the frontmost window. Example: `screen self-test: OCR 3055 chars from Ghostty — "* Apps not covered in tabtype…"`.
+- On every launch, the info-level log (not only verbose) writes the first 60 characters of OCR text from the frontmost window. Example: `screen self-test: OCR 3055 chars from Ghostty — "* Apps not covered in s1s…"`.
 - With verbose logging on, raw model output that contains the user's text is written in plain text. The Advanced pane does not warn about this.
 - `Log.swift` only appends. There is no size cap or rotation.
 
-**Why it matters:** The Personalization pane says collected data is encrypted. The log in `~/Library/Logs/TabType/tabtype.log` is not encrypted.
+**Why it matters:** The Personalization pane says collected data is encrypted. The log in `~/Library/Logs/S1S/s1s.log` is not encrypted.
 
 **Suggestion:** Log only the character count at info level. Add a note under the Verbose logging toggle. Cap or rotate the log file.
 
 **Fix:**
 
 - The self-test line logs only the character count and the app name, for example `screen self-test: OCR 152 chars from TextEdit`.
-- When the log is over 5 MB, `Log.write` moves it to `tabtype.log.1`, replacing any older copy, and starts a new file. This was verified by padding the log to 5.3 MB.
+- When the log is over 5 MB, `Log.write` moves it to `s1s.log.1`, replacing any older copy, and starts a new file. This was verified by padding the log to 5.3 MB.
 - Advanced ▸ Diagnostics now says "Writes your typed text and model output to the log file in plain text."
 
 ## TT-008
@@ -241,14 +241,14 @@ Later attempts with the same steps worked. `KeystrokeMonitor.handle` and `Engine
 
 - **Severity:** Low
 - **Status:** Fixed
-- **Area:** `Sources/TabType/Model/ModelCatalog.swift:30`, `Sources/TabType/Model/HardwareInfo.swift:36`
+- **Area:** `Sources/S1S/Model/ModelCatalog.swift:30`, `Sources/S1S/Model/HardwareInfo.swift:36`
 
 **Observed** (Settings ▸ Engine & Model)
 
 - The 4-bit entry text says "Recommended." The 8-bit entry shows the "Best for you" badge.
 - The 8-bit entry says "Needs 16 GB+ RAM", but `recommendedModelId` recommends it only at 24 GB and above. The README also says 24 GB+.
 
-**Fix:** The hard-coded "Recommended." (4-bit) and "TabType default." (Qwen2.5 3B) notes are removed. The 8-bit note now says "Recommended on 24 GB+ Macs." The "Best for you" badge is now the only recommendation. The README download range is now ~0.3–4.3 GB, which covers the 1.5B and 0.5B tiers.
+**Fix:** The hard-coded "Recommended." (4-bit) and "S1S default." (Qwen2.5 3B) notes are removed. The 8-bit note now says "Recommended on 24 GB+ Macs." The "Best for you" badge is now the only recommendation. The README download range is now ~0.3–4.3 GB, which covers the 1.5B and 0.5B tiers.
 
 ## TT-009
 
@@ -256,9 +256,9 @@ Later attempts with the same steps worked. `KeystrokeMonitor.handle` and `Engine
 
 - **Severity:** Low (copy)
 - **Status:** Fixed. The parenthetical is removed.
-- **Area:** `Sources/TabType/UI/Panes/SetupPane.swift:64`
+- **Area:** `Sources/S1S/UI/Panes/SetupPane.swift:64`
 
-The clipboard option ends with "(Free — no upgrade required.)". TabType has no paid tier, so the text suggests one exists. Remove the parenthetical.
+The clipboard option ends with "(Free — no upgrade required.)". S1S has no paid tier, so the text suggests one exists. Remove the parenthetical.
 
 ## TT-010
 
@@ -273,22 +273,22 @@ The clipboard option ends with "(Free — no upgrade required.)". TabType has no
 2. Select Apps. The window becomes 980 × 648 and moves to x = 790.
 3. Select General. The window stays 980 pt wide.
 
-Also, the window title is "TabType Settings" on the Setup pane but shows the pane name on every other pane.
+Also, the window title is "S1S Settings" on the Setup pane but shows the pane name on every other pane.
 
-**Cause:** `resizeSettings` returned early when the window was not visible. The log showed that resize requests made while TabType was hidden were dropped, so the window stayed 980 pt wide.
+**Cause:** `resizeSettings` returned early when the window was not visible. The log showed that resize requests made while S1S was hidden were dropped, so the window stayed 980 pt wide.
 
 **Fix:** A hidden window is now resized without animation instead of being skipped. The hard-coded title is replaced with the name of the pane the window opens on, because SwiftUI's `navigationTitle` reaches the window only after a selection change. The title fallback is now `.setup`.
 
-**Retest:** Apps sets the width to 980. General, Setup, and Statistics set it back to 760, including after TabType was hidden and shown again on the Apps pane. The title matches the selected pane, including Setup.
+**Retest:** Apps sets the width to 980. General, Setup, and Statistics set it back to 760, including after S1S was hidden and shown again on the Apps pane. The title matches the selected pane, including Setup.
 
 ## TT-011
 
-**Apps list includes TabType itself**
+**Apps list includes S1S itself**
 
 - **Severity:** Low
 - **Status:** Fixed. The running-apps list now skips `Bundle.main.bundleIdentifier`.
 
-Settings ▸ Apps lists TabType as an app that can be configured. TabType never shows suggestions in its own windows, so this row has no effect. Filter out the app's own bundle ID.
+Settings ▸ Apps lists S1S as an app that can be configured. S1S never shows suggestions in its own windows, so this row has no effect. Filter out the app's own bundle ID.
 
 ## TT-012
 
@@ -299,10 +299,10 @@ Settings ▸ Apps lists TabType as an app that can be configured. TabType never 
 
 | File | Warning |
 |---|---|
-| `Sources/TabType/Core/Engine.swift:1677` | `split` is never mutated; use `let` |
-| `Sources/TabType/Model/HardwareInfo.swift:18` | `init(cString:)` is deprecated |
-| `Sources/TabType/UI/OnboardingView.swift:10` | `Publishers` / `Autoconnect` used without `import Combine` (2 warnings) |
-| `Sources/TabType/UI/Panes/SetupPane.swift:13` | `Publishers` / `Autoconnect` used without `import Combine` (2 warnings) |
+| `Sources/S1S/Core/Engine.swift:1677` | `split` is never mutated; use `let` |
+| `Sources/S1S/Model/HardwareInfo.swift:18` | `init(cString:)` is deprecated |
+| `Sources/S1S/UI/OnboardingView.swift:10` | `Publishers` / `Autoconnect` used without `import Combine` (2 warnings) |
+| `Sources/S1S/UI/Panes/SetupPane.swift:13` | `Publishers` / `Autoconnect` used without `import Combine` (2 warnings) |
 
 **Fix:** All six are fixed. A full recompile also showed four warnings not listed above. Three are fixed: an unused `flags` in `ExtraPanes.swift`, `var logits` in `Predictor.swift`, and the deprecated `GenerationOptions(sampling:)` in `FoundationModelEngine.swift` and `GenCLI/main.swift`. The deprecated MLX `generate` call at `Predictor.swift:322` remains.
 
@@ -394,15 +394,15 @@ About 77% of requests were deferred. This may be expected with continuous genera
 **GPU memory grows to 20+ GB during a session**
 
 - **Severity:** High
-- **Status:** Fixed (verified with `tabtype-gencli --memtest` and the running app)
+- **Status:** Fixed (verified with `s1s-gencli --memtest` and the running app)
 
-**Steps:** Run TabType with `mlx-community/Qwen3-4B-Instruct-2507-8bit` on a 64 GB Mac. Type in several apps for about 15 minutes, so the prompt length changes often.
+**Steps:** Run S1S with `mlx-community/Qwen3-4B-Instruct-2507-8bit` on a 64 GB Mac. Type in several apps for about 15 minutes, so the prompt length changes often.
 
-**Evidence:** `footprint` reported 21 GB for TabType after 14 minutes. Of that, 20.7 GB was `IOAccelerator (graphics)`, which holds MLX Metal buffers. The model weights are 4 GB on disk.
+**Evidence:** `footprint` reported 21 GB for S1S after 14 minutes. Of that, 20.7 GB was `IOAccelerator (graphics)`, which holds MLX Metal buffers. The model weights are 4 GB on disk.
 
-**Cause:** MLX keeps freed GPU buffers in a cache for reuse. The cache limit defaults to the memory limit, which is 1.5 times the recommended working set (62 GB on this Mac). Each prefill of a different prompt length frees intermediate buffers of new sizes, so the cache kept growing. TabType never set a cache limit.
+**Cause:** MLX keeps freed GPU buffers in a cache for reuse. The cache limit defaults to the memory limit, which is 1.5 times the recommended working set (62 GB on this Mac). Each prefill of a different prompt length frees intermediate buffers of new sizes, so the cache kept growing. S1S never set a cache limit.
 
-`tabtype-gencli --memtest 40` prefills prompts of 100 to 1,500 tokens:
+`s1s-gencli --memtest 40` prefills prompts of 100 to 1,500 tokens:
 
 | Cache limit | Cache after 40 rounds | Active | Average latency |
 |---|---|---|---|
@@ -422,7 +422,7 @@ Active memory was the same in both runs, so no arrays leaked. Only the cache gre
 - **Severity:** Medium
 - **Status:** Fixed. Not verified in the running app.
 
-**Steps:** Delete `onboardingProfile` and launch TabType. Click "Personalize TabType". Click Emails, Engineer, and Concise.
+**Steps:** Delete `onboardingProfile` and launch S1S. Click "Personalize S1S". Click Emails, Engineer, and Concise.
 
 **Evidence:** The clicks register. A temporary log line in the chip action recorded each tap, and "Start quick picks" became enabled after all three groups had a choice. The chips themselves did not change: selected and unselected chips looked the same in the running app. A user cannot see which writing types are on, and clicking a writing type twice silently turns it off again.
 
@@ -430,7 +430,7 @@ Active memory was the same in both runs, so no arrays leaked. Only the cache gre
 
 **Suggested fix:** Show selection with a style that macOS renders, for example `.borderedProminent` for selected chips, or a checkmark next to the title. The `.isSelected` accessibility trait is already set.
 
-**Verification note:** Found while verifying onboarding personalization through computer use. Computer use cannot request TabType, because it is a menu-bar (`.accessory`) app. The test used a temporary, uncommitted patch that launched TabType with the `.regular` activation policy.
+**Verification note:** Found while verifying onboarding personalization through computer use. Computer use cannot request S1S, because it is a menu-bar (`.accessory`) app. The test used a temporary, uncommitted patch that launched S1S with the `.regular` activation policy.
 
 **Fix:** `OnboardingView.chip` draws its own style. A selected chip has an accent-color fill, white semibold text, and a checkmark. An unselected chip has a light gray fill.
 
@@ -487,7 +487,7 @@ Active memory was the same in both runs, so no arrays leaked. Only the cache gre
 
 **Steps:** Open Apps, then select Zed. Or open Model & Power and read the model list.
 
-**Actual:** "How TabType works here" shows "Treats your document as the context — reads a large window…". Model notes include "non-thinking instruct — best quality/latency" and "Hybrid thinking-mode model — may emit reasoning".
+**Actual:** "How S1S works here" shows "Treats your document as the context — reads a large window…". Model notes include "non-thinking instruct — best quality/latency" and "Hybrid thinking-mode model — may emit reasoning".
 
 **Cause:** The Settings copy cleanup covered only the UI files. These strings come from Core and Model.
 
@@ -541,7 +541,7 @@ Active memory was the same in both runs, so no arrays leaked. Only the cache gre
 
 **Candidate change:** Ignore repeated focus notifications when the focused AX element has not changed. Previously, every focus notification cleared the saved suggestion, even if it referred to the same field. Genuine focus changes still clear it. Verbose diagnostics record acceptance lengths and the caller that clears a suggestion.
 
-**Verification:** AX identity tests cover repeated references, different elements, and lost focus. The cause is not yet confirmed in a live Tab reproduction. The computer-use tool can edit Claude in the background, while TabType follows the foreground app. Testing requires Claude to remain in the foreground.
+**Verification:** AX identity tests cover repeated references, different elements, and lost focus. The cause is not yet confirmed in a live Tab reproduction. The computer-use tool can edit Claude in the background, while S1S follows the foreground app. Testing requires Claude to remain in the foreground.
 
 ## TT-024
 

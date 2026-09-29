@@ -25,5 +25,5 @@ func draw(size: CGFloat, path: String) {
     try! pngData.write(to: URL(fileURLWithPath: path))
 }
 
-draw(size: 22, path: "Sources/TabType/Resources/Assets.xcassets/MenuBarIcon.imageset/MenuBarIcon.png")
-draw(size: 44, path: "Sources/TabType/Resources/Assets.xcassets/MenuBarIcon.imageset/MenuBarIcon@2x.png")
+draw(size: 22, path: "Sources/S1S/Resources/Assets.xcassets/MenuBarIcon.imageset/MenuBarIcon.png")
+draw(size: 44, path: "Sources/S1S/Resources/Assets.xcassets/MenuBarIcon.imageset/MenuBarIcon@2x.png")
